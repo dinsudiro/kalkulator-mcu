@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalkulator Paket MCU</title>
+<style>
+:root{font:15px/1.5 "DM Sans",system-ui,sans-serif;color:#102d30;background:#f3f6f5;--muted:#526b6a;--line:#dce6e2;--green:#086253;--light:#e6f3ee}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
+header{background:#103c38;color:#fff;padding:17px 0}.wrap{max-width:1190px;margin:auto;padding-inline:24px}.top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.brand{font-weight:750;display:flex;align-items:center;gap:10px}.logo{background:#b7ead4;color:#103c38;border-radius:10px;width:32px;height:32px;display:grid;place-items:center;font-size:23px}.nav{display:flex;flex-wrap:wrap;gap:4px}.nav button{color:#dcece7;background:transparent;border:0;border-radius:8px;padding:8px 12px}.nav button.active{background:#27534e;color:white}
+main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:1.08;margin:0 0 11px;letter-spacing:-.055em}h2{font-size:20px;letter-spacing:-.025em;margin:0 0 13px}p{margin:0}.intro{color:var(--muted);margin-bottom:25px}.grid{display:grid;grid-template-columns:minmax(0,1.48fr) minmax(0,1fr);gap:20px;align-items:start}.stack{display:grid;gap:18px}.panel{background:#fff;border:1px solid var(--line);border-radius:17px;padding:21px;min-width:0}.summary{position:sticky;top:16px}.hero{background:#10574c;color:white;padding:20px;border-radius:13px;margin-bottom:14px}.hero span{color:#d4f2e5}.hero strong{display:block;font-size:clamp(28px,4vw,40px);line-height:1.2;letter-spacing:-.045em}.hero small{display:block;margin-top:6px;color:#d4f2e5}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.fields label{display:grid;gap:5px}.wide{grid-column:1/-1}input:not([type=checkbox]),select{width:100%;min-width:0;border:1px solid #c5d6d0;background:#fff;padding:8px 10px;border-radius:8px;color:inherit}input[type=checkbox]{accent-color:var(--green);width:17px;height:17px;margin:0;flex:none}label,.label{font-size:13px;font-weight:650}.muted,small{color:var(--muted)}.note{font-size:13px;margin-top:12px;color:var(--muted)}.row,.actions{display:flex;align-items:center;justify-content:space-between;gap:10px}.actions{justify-content:flex-start;flex-wrap:wrap;margin-top:14px}.btn{border:1px solid #bfd4cc;background:white;color:var(--green);padding:8px 12px;border-radius:8px;font-weight:700}.primary{background:var(--green);color:white;border-color:var(--green)}.danger{color:#9a302c}.picker{max-height:430px;overflow:auto;margin-top:14px}.group{padding:6px 10px;background:var(--light);color:var(--green);font-size:12px;font-weight:750;border-radius:5px;margin:8px 0 2px}.item{display:flex;align-items:center;gap:9px;padding:9px 3px;border-bottom:1px solid #edf1ef}.item span{flex:1}.item b{font-size:13px;white-space:nowrap}.metric{padding:8px 0;border-bottom:1px solid #edf1ef;font-size:14px}.metric b{text-align:right;white-space:nowrap}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:540px}th{text-align:left;background:var(--light);font-size:13px}td,th{padding:8px;border-bottom:1px solid #eaf0ed}td:first-child{min-width:190px}#units td:nth-child(4){min-width:185px}#units input[data-field=vendor]{margin-top:6px}td button{padding:5px 8px!important}.check{display:flex!important;align-items:center;gap:8px!important}.status{margin-top:12px;color:var(--green);font-weight:650}.empty{padding:17px 0;color:var(--muted)}[hidden]{display:none!important}details{margin-top:13px}summary{cursor:pointer;font-weight:650}
+@media(max-width:790px){.grid{grid-template-columns:1fr}.summary{position:static}.wrap{padding-inline:15px}.panel{padding:16px}}
+@media(max-width:360px){.fields{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<section id="loginScreen" class="wrap" style="padding-block:48px">
+ <form id="loginForm" class="panel stack" style="max-width:420px;margin:auto">
+  <h1>Masuk ke Kalkulator MCU</h1>
+  <label>Email<input name="email" type="email" required autocomplete="username"></label>
+  <label>Kata sandi<input name="password" type="password" required autocomplete="current-password"></label>
+  <button class="btn primary" type="submit">Masuk</button>
+  <p role="status" id="loginStatus">Gunakan akun yang sudah didaftarkan admin.</p>
+ </form>
+</section>
+<div id="protectedApp" hidden>
+<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button id="logout">Keluar</button></nav></div></header>
+<main class="wrap">
+<section id="builder">
+<h1>Susun paket MCU</h1><p class="intro">Pilih pemeriksaan dan simulasikan tarif per peserta serta total penawaran.</p>
+<div class="grid">
+<div class="stack">
+<section class="panel"><h2>Informasi paket</h2><div class="fields">
+<label class="wide">Nama paket<input id="name" maxlength="120" placeholder="Contoh: MCU Karyawan Tahunan"></label>
+<label>Jenis paket<select id="type"><option value="corporate">Perusahaan</option><option value="individual">Perorangan</option></select></label>
+<label>Jumlah peserta<input id="people" type="number" min="1" step="1" required></label>
+</div><div class="actions"><button class="btn" id="example">Muat contoh lampiran</button><button class="btn" id="new">Paket baru</button><button class="btn" id="useCurrent" hidden>Pakai referensi terbaru</button></div></section>
+<section class="panel"><div class="row"><h2>Komponen paket</h2><small id="count"></small></div><label>Cari komponen<input type="search" id="search" placeholder="Cari pemeriksaan atau fasilitas"></label><div class="actions"><button class="btn" id="all">Pilih semua</button><button class="btn" id="none">Kosongkan pilihan</button></div><div class="picker" id="picker"></div></section>
+<section class="panel"><h2>Pengaturan tarif</h2><div class="fields">
+<label class="wide">Biaya operasional<select id="opsMode"><option value="allocate">Total operasional ÷ jumlah peserta</option><option value="fixed">Nominal tetap per peserta</option><option value="none">Tanpa biaya operasional</option></select></label>
+<label id="fixedWrap" class="wide">Operasional tetap (Rp/peserta)<input id="fixed" type="number" min="0" step="1" required></label>
+<label>Margin / markup (%)<input id="margin" type="number" min="0" step="0.01" required></label>
+<label>PPN simulasi (%)<input id="tax" type="number" min="0" step="0.01" required></label>
+<label>Referral fee (%)<input id="fee" type="number" min="0" step="0.01" required></label>
+<label>Pembulatan ke atas (Rp)<input id="step" type="number" min="0" step="1" required><small>Isi 0 untuk menonaktifkan.</small></label>
+<label class="wide">Tarif akhir manual (Rp/peserta)<input id="manual" type="number" min="0" step="1" placeholder="Opsional"></label>
+</div><p class="note">Margin dihitung dari total unit cost. PPN simulasi dihitung setelah margin. Referral fee dihitung dari tarif termasuk PPN.</p></section>
+</div>
+<aside class="panel summary"><h2>Ringkasan penawaran</h2><div class="hero"><span>Tarif akhir per peserta</span><strong id="price">—</strong><small id="total"></small></div><div id="breakdown"></div><p class="note" id="opNote"></p><div class="actions"><button class="btn primary" id="save">Simpan paket</button></div><p class="status" id="builderStatus" role="status"></p></aside>
+</div>
+</section>
+<section id="reference" hidden>
+<h1>Referensi biaya</h1><p class="intro">Ubah atau tambah komponen, lalu simpan untuk digunakan saat menyusun paket.</p>
+<form id="refForm" class="stack">
+<section class="panel"><h2>Unit cost per peserta</h2><div class="tablewrap"><table><thead><tr><th>Komponen</th><th>Kategori</th><th>Unit cost (Rp)</th><th>Sumber unit cost</th><th>Aksi</th></tr></thead><tbody id="units"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addUnit">+ Tambah komponen</button></div></section>
+<section class="panel"><h2>Biaya operasional kegiatan</h2><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Harga satuan (Rp)</th><th>Subtotal</th><th>Aksi</th></tr></thead><tbody id="ops"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addOp">+ Tambah biaya operasional</button><strong id="refTotal"></strong></div><p class="note">Harga yang kosong di lampiran diisi Rp 0. Ubah nilainya jika ada biaya yang perlu dialokasikan.</p></section>
+<div class="actions"><button class="btn primary" type="submit">Simpan referensi</button><button class="btn" type="button" id="discard">Batalkan perubahan</button></div><p class="status" id="refStatus" role="status"></p>
+</form></section>
+<section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Paket dan referensi disimpan di browser ini. Paket tersimpan menyimpan salinan biaya saat dibuat.</p><div class="stack" id="savedList"></div></section>
+</main>
+</div>
+<script src="excel.js" defer></script>
+<script src="auth-config.js" defer></script>
+<script src="auth.js" defer></script>
+<script>
+'use strict';
+const categories=['Pemeriksaan klinis','Laboratorium','Pemeriksaan penunjang','Fasilitas','Lainnya'];
+let defaults;
+let key;
+const copy=value=>JSON.parse(JSON.stringify(value));
+function load(){
+ try {const stored=JSON.parse(localStorage.getItem(key)); if(stored?.refs&&Array.isArray(stored.packages)) return stored;} catch {}
+ return {refs:copy(defaults),packages:[]};
+}
+let data;
+let snapshot=null;
+let editId=null;
+let selected=new Set();
+const $=id=>document.getElementById(id);
+const money=new Intl.NumberFormat('id-ID',{maximumFractionDigits:0});
+const rp=value=>'Rp '+money.format(value);
+const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+const opTotal=rows=>rows.reduce((sum,item)=>sum+item.qty*item.cost,0);
+const activeRefs=()=>snapshot||data.refs;
+const fields=['name','type','people','opsMode','fixed','margin','tax','fee','step','manual'];
+function persist(next,status,message){
+ try {localStorage.setItem(key,JSON.stringify(next));data=next;$(status).textContent=message;return true;}
+ catch {$(status).textContent='Penyimpanan browser tidak tersedia. Perubahan belum tersimpan.';return false;}
+}
+function openTab(tab){
+ document.querySelectorAll('[data-tab]').forEach(button=>{
+  const active=button.dataset.tab===tab;button.classList.toggle('active',active);
+  if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+ });
+ ['builder','reference','saved'].forEach(id=>{$(id).hidden=id!==tab;});
+ if(tab==='saved')renderSaved();
+}
+document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.tab));
+function readFields(){return Object.fromEntries(fields.map(id=>[id,$(id).value]));}
+function calculate(values,items,refs){
+ const people=Number(values.people);
+ const direct=items.reduce((sum,item)=>sum+item.cost,0);
+ const totalOps=opTotal(refs.ops);
+ const operating=values.opsMode==='allocate'?totalOps/people:values.opsMode==='fixed'?Number(values.fixed):0;
+ const cost=direct+operating;
+ const margin=cost*Number(values.margin)/100;
+ const tax=(cost+margin)*Number(values.tax)/100;
+ const beforeFee=cost+margin+tax;
+ const fee=beforeFee*Number(values.fee)/100;
+ const offer=beforeFee+fee;
+ const step=Number(values.step);
+ const rounded=step?Math.ceil(offer/step)*step:Math.round(offer);
+ const final=values.manual===''?rounded:Number(values.manual);
+ return {direct,totalOps,operating,cost,margin,tax,beforeFee,fee,offer,final,total:final*people,people};
+}
+function picked(){return activeRefs().units.filter(item=>selected.has(item.id));}
+function update(){
+ const values=readFields();
+ $('useCurrent').hidden=!snapshot;
+ $('people').disabled=values.type==='individual';
+ $('fixedWrap').hidden=values.opsMode!=='fixed';
+ const valid=fields.every(id=>$(id).checkValidity()||id==='fixed'&&values.opsMode!=='fixed');
+ const result=valid?calculate(values,picked(),activeRefs()):null;
+ const usable=result&&Number.isFinite(result.total)&&Number.isFinite(result.offer)&&picked().length>0;
+ $('count').textContent=picked().length+' dipilih';
+ $('price').textContent=usable?rp(result.final):'—';
+ $('total').textContent=usable?rp(result.total)+' total · '+money.format(result.people)+' peserta':'Pilih komponen dan isi pengaturan tarif.';
+ $('save').disabled=!usable;
+ $('breakdown').innerHTML=usable?[
+  ['Unit cost komponen',result.direct],['Operasional per peserta',result.operating],['Total unit cost',result.cost],
+  ['Margin / markup',result.margin],['PPN simulasi',result.tax],['Tarif sebelum referral',result.beforeFee],
+  ['Referral fee',result.fee],['Tarif sebelum pembulatan',result.offer],['Penyesuaian tarif akhir',result.final-result.offer]
+ ].map(([label,value])=>'<div class="row metric"><span>'+label+'</span><b>'+rp(value)+'</b></div>').join(''):'';
+ $('opNote').textContent=usable&&values.opsMode==='allocate'?rp(result.totalOps)+' biaya operasional kegiatan ÷ '+money.format(result.people)+' peserta.':'';
+}
+function renderPicker(){
+ const query=$('search').value.trim().toLowerCase();
+ const matching=activeRefs().units.filter(item=>item.name.toLowerCase().includes(query)||categories[item.category].toLowerCase().includes(query));
+ $('picker').innerHTML=categories.map((label,category)=>{
+  const list=matching.filter(item=>item.category===category);
+  return list.length?'<div class="group">'+label+'</div>'+list.map(item=>'<label class="item"><input type="checkbox" value="'+escape(item.id)+'" '+(selected.has(item.id)?'checked':'')+'><span>'+escape(item.name)+'</span><b>'+rp(item.cost)+'</b></label>').join(''):'';
+ }).join('')||'<p class="empty">Komponen tidak ditemukan.</p>';
+ update();
+}
+function start(example=false){
+ snapshot=example?copy(defaults):null;editId=null;
+ const values={name:example?'Contoh MCU Perusahaan':'',type:'corporate',people:1,opsMode:'allocate',fixed:defaults.example?.fixed??0,margin:12,tax:11,fee:5,step:10000,manual:'',...(example?defaults.example:{})};
+ fields.forEach(id=>{$(id).value=values[id];});
+ selected=new Set(example?defaults.units.map(item=>item.id):[]);
+ $('search').value='';
+ $('builderStatus').textContent=example?'Contoh memakai referensi dan pengaturan tarif dari lampiran.':'';
+ renderPicker();
+}
+$('picker').onchange=event=>{const box=event.target;if(box.checked)selected.add(box.value);else selected.delete(box.value);update();};
+$('search').oninput=renderPicker;
+$('all').onclick=()=>{selected=new Set(activeRefs().units.map(item=>item.id));renderPicker();};
+$('none').onclick=()=>{selected.clear();renderPicker();};
+$('example').onclick=()=>start(true);
+$('new').onclick=()=>start();
+$('useCurrent').onclick=()=>{
+ snapshot=null;
+ selected=new Set(data.refs.units.filter(item=>selected.has(item.id)).map(item=>item.id));
+ $('builderStatus').textContent='Paket memakai referensi biaya terbaru.';
+ renderPicker();
+};
+fields.forEach(id=>{$(id).oninput=()=>{
+ if(id==='type'){
+  if($('type').value==='individual'){$('people').value=1;$('opsMode').value='fixed';}
+  else $('opsMode').value='allocate';
+ }
+ update();
+};});
+$('save').onclick=()=>{
+ const values=readFields();
+ if(!values.name.trim()){$('builderStatus').textContent='Isi nama paket sebelum menyimpan.';$('name').focus();return;}
+ const id=editId||uid();
+ const refs=copy(activeRefs());
+ const pkg={id,values,refs,selected:[...selected],result:calculate(values,picked(),refs)};
+ const packages=[pkg,...data.packages.filter(item=>item.id!==id)];
+ if(persist({...data,packages},'builderStatus','Paket tersimpan.'))editId=id;
+};
+function renderSaved(){
+ $('savedList').innerHTML=data.packages.map(pkg=>'<article class="panel"><h2>'+escape(pkg.values.name)+'</h2><p class="muted">'+(pkg.values.type==='corporate'?'Perusahaan':'Perorangan')+' · '+money.format(pkg.result.people)+' peserta · '+pkg.selected.length+' komponen</p><p><strong>'+rp(pkg.result.final)+'</strong> / peserta · '+rp(pkg.result.total)+' total</p><div class="actions"><button class="btn" data-open="'+escape(pkg.id)+'">Buka paket</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="klien">Unduh Excel Klien</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="internal">Unduh Excel Internal</button><button class="btn danger" data-delete="'+escape(pkg.id)+'">Hapus</button></div></article>').join('')||'<div class="panel muted">Belum ada paket tersimpan.</div>';
+}
+$('savedList').onclick=event=>{
+ const {open,delete:remove,download,format}=event.target.dataset;
+ if(download)downloadPackage(data.packages.find(item=>item.id===download),format);
+ if(open){
+  const pkg=data.packages.find(item=>item.id===open);
+  snapshot=copy(pkg.refs);editId=pkg.id;selected=new Set(pkg.selected);
+  fields.forEach(id=>{$(id).value=pkg.values[id];});
+  $('search').value='';$('builderStatus').textContent='Paket ini memakai salinan referensi saat disimpan.';
+  openTab('builder');renderPicker();
+ }
+ if(remove&&confirm('Hapus paket tersimpan ini?')){
+  if(persist({...data,packages:data.packages.filter(item=>item.id!==remove)},'builderStatus','Paket dihapus.')){
+   if(editId===remove)editId=null;
+   renderSaved();
+  }else alert('Paket belum berhasil dihapus.');
+ }
+};
+function numberInput(field,label,value){
+ return '<input data-field="'+field+'" aria-label="'+label+'" type="number" min="0" step="1" required value="'+escape(value)+'">';
+}
+function syncVendor(row){
+ const vendor=row.querySelector('[data-field="vendor"]');
+ const isVendor=row.querySelector('[data-field="source"]').value==='vendor';
+ vendor.hidden=!isVendor;
+ vendor.disabled=!isVendor;
+ vendor.required=isVendor;
+}
+function refRow(item,operational){
+ const row=document.createElement('tr');
+ if(!operational)row.dataset.id=item.id;
+ const name='<td><input data-field="name" aria-label="Nama item" required maxlength="120" value="'+escape(item.name)+'"></td>';
+ const category='<select data-field="category" aria-label="Kategori">'+categories.map((label,index)=>'<option value="'+index+'" '+(index===item.category?'selected':'')+'>'+label+'</option>').join('')+'</select>';
+ const source=operational?'':`<td>
+  <select data-field="source" aria-label="Sumber unit cost">
+   <option value="">Belum ditentukan</option>
+   <option value="internal">Internal Ummi</option>
+   <option value="vendor">Vendor</option>
+  </select>
+  <input data-field="vendor" aria-label="Nama vendor" placeholder="Nama vendor" maxlength="120" value="${escape(item.vendor||'')}">
+ </td>`;
+ row.innerHTML=name+'<td>'+(operational?numberInput('qty','Kuantitas',item.qty):category)+'</td><td>'+numberInput('cost','Harga satuan',item.cost)+'</td>'+(operational?'<td data-subtotal></td>':source)+'<td><button class="btn danger" type="button" data-remove aria-label="Hapus item">Hapus</button></td>';
+ if(!operational){
+  row.querySelector('[data-field="source"]').value=item.source||'';
+  syncVendor(row);
+ }
+ return row;
+}
+function readRows(id){
+ return [...$(id).rows].map(row=>{
+  const item=Object.fromEntries([...row.querySelectorAll('[data-field]')].map(input=>[input.dataset.field,['qty','cost','category'].includes(input.dataset.field)?Number(input.value):input.value.trim()]));
+  if(row.dataset.id)item.id=row.dataset.id;
+  if(item.source!=='vendor')delete item.vendor;
+  return item;
+ });
+}
+function updateRefTotal(){
+ const ops=readRows('ops');
+ [...$('ops').rows].forEach((row,i)=>{row.querySelector('[data-subtotal]').textContent=rp(ops[i].qty*ops[i].cost);});
+ $('refTotal').textContent='Total operasional '+rp(opTotal(ops));
+}
+function renderReference(){
+ $('units').replaceChildren(...data.refs.units.map(item=>refRow(item,false)));
+ $('ops').replaceChildren(...data.refs.ops.map(item=>refRow(item,true)));
+ updateRefTotal();
+}
+$('refForm').oninput=event=>{
+ if(event.target.dataset.field==='source')syncVendor(event.target.closest('tr'));
+ if(event.target.dataset.field==='qty'||event.target.dataset.field==='cost')updateRefTotal();$('refStatus').textContent='Ada perubahan yang belum disimpan.';};
+$('refForm').onclick=event=>{
+ if(event.target.hasAttribute('data-remove')){
+  event.target.closest('tr').remove();updateRefTotal();$('refStatus').textContent='Ada perubahan yang belum disimpan.';
+ }
+};
+$('addUnit').onclick=()=>{$('units').append(refRow({id:uid(),name:'',cost:0,category:4},false));$('units').lastElementChild.querySelector('input').focus();$('refStatus').textContent='Ada perubahan yang belum disimpan.';};
+$('addOp').onclick=()=>{$('ops').append(refRow({name:'',cost:0,qty:1},true));updateRefTotal();$('ops').lastElementChild.querySelector('input').focus();$('refStatus').textContent='Ada perubahan yang belum disimpan.';};
+$('discard').onclick=()=>{renderReference();$('refStatus').textContent='Perubahan dibatalkan.';};
+$('refForm').onsubmit=event=>{
+ event.preventDefault();
+ const refs={units:readRows('units'),ops:readRows('ops')};
+ if([...refs.units,...refs.ops].some(item=>!item.name)){
+  $('refStatus').textContent='Isi nama untuk setiap item.';return;
+ }
+ if(refs.units.some(item=>item.source==='vendor'&&!item.vendor)){
+  $('refStatus').textContent='Isi nama vendor untuk setiap komponen yang bersumber dari vendor.';return;
+ }
+ if(persist({...data,refs},'refStatus','Referensi biaya tersimpan.')){
+  if(!snapshot) selected=new Set(refs.units.filter(item=>selected.has(item.id)).map(item=>item.id));
+  renderPicker();
+ }
+};
+function initializeCalculator(reference, userId){
+ defaults=reference;
+ $('example').hidden=!reference.example;
+ key='kalkulator-mcu-v1:'+userId;
+ data=load();
+ $('refStatus').textContent='';
+ renderReference();
+ start();
+ openTab('builder');
+}
+</script>
+</body>
+</html>
