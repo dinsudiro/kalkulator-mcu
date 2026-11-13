@@ -52,7 +52,7 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <section id="reference" hidden>
 <h1>Referensi biaya</h1><p class="intro">Ubah atau tambah komponen, lalu simpan untuk digunakan saat menyusun paket.</p>
 <form id="refForm" class="stack">
-<section class="panel"><h2>Unit cost per peserta</h2><div class="tablewrap"><table><thead><tr><th>Komponen</th><th>Kategori</th><th>Unit cost (Rp)</th><th>Sumber unit cost</th><th>Aksi</th></tr></thead><tbody id="units"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addUnit">+ Tambah komponen</button></div></section>
+<section class="panel"><h2>Unit cost per peserta</h2><div class="tablewrap"><table><thead><tr><th>Komponen</th><th>Kategori</th><th>Unit cost (Rp)</th><th>Sumber unit cost</th><th>Aksi</th></tr></thead><tbody id="units"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addUnit">+ Tambah komponen</button><button type="button" class="btn" id="importPrices" hidden>Upload referensi biaya (PDF)</button></div></section>
 <section class="panel"><h2>Biaya operasional kegiatan</h2><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Harga satuan (Rp)</th><th>Subtotal</th><th>Aksi</th></tr></thead><tbody id="ops"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addOp">+ Tambah biaya operasional</button><strong id="refTotal"></strong></div><p class="note">Harga yang kosong di lampiran diisi Rp 0. Ubah nilainya jika ada biaya yang perlu dialokasikan.</p></section>
 <div class="actions"><button class="btn primary" type="submit">Simpan referensi</button><button class="btn" type="button" id="discard">Batalkan perubahan</button></div><p class="status" id="refStatus" role="status"></p>
 </form></section>
@@ -392,6 +392,7 @@ function lock(message) {
  clearTimeout(expiryTimer);
  session = undefined;
  appRole = undefined;
+ if($('priceImport').open)$('priceImport').close();
  $('accountForm').reset(); $('documentForm').reset(); $('documentList').replaceChildren();
  data = undefined;
  defaults = undefined;
@@ -454,6 +455,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 const canManage=()=>['super_admin','supervisor'].includes(appRole);
 function applyRole(){
+ $('importPrices').hidden=!canManage();
  for(const tab of ['configuration','documents'])document.querySelector('[data-tab="'+tab+'"]').hidden=!canManage();
  $('accountForm').hidden=appRole!=='super_admin';
  for(const element of $('refForm').querySelectorAll('input,select,button')){
@@ -563,7 +565,174 @@ $('documentForm').onsubmit=async event=>{
 };
 
 </script>
+<dialog id="priceImport" style="width:min(740px,94vw);max-height:88vh;border:1px solid #d9e7e2;border-radius:16px;padding:22px">
+<h2>Impor referensi biaya</h2>
+<div class="fields"><label>Sumber unit cost<select id="importSource"><option value="">Pilih sumber</option><option value="internal">Internal Ummi</option><option value="vendor">Vendor</option></select></label>
+<label id="importVendorWrap" hidden>Nama vendor<input id="importVendor" maxlength="120"></label></div>
+<div class="actions"><button type="button" class="btn" id="pickPricePdf" disabled>Pilih PDF</button><input type="file" id="pricePdf" accept=".pdf,application/pdf" hidden><button type="button" class="btn" id="cancelImport">Tutup</button></div>
+<p id="importStatus" class="note" role="status"></p>
+<div class="tablewrap" id="importPreview" hidden><table><thead><tr><th>Impor</th><th>Nama item</th><th>Unit cost (Rp)</th></tr></thead><tbody id="importRows"></tbody></table></div>
+<div class="actions"><button type="button" class="btn primary" id="applyImport" hidden>Masukkan ke tabel</button></div>
+</dialog>
+<script>
+const pdfDialog=$('priceImport');
+let pdfRun=0;
+function resetImport(){
+ pdfRun++;
+ $('pricePdf').value='';
+ $('importRows').replaceChildren();
+ $('importPreview').hidden=true;
+ $('applyImport').hidden=true;
+ $('importStatus').textContent='';
+}
+function syncImportSource(){
+ const vendor=$('importSource').value==='vendor';
+ $('importVendorWrap').hidden=!vendor;
+ $('pickPricePdf').disabled=!$('importSource').value||vendor&&!$('importVendor').value.trim();
+ $('applyImport').disabled=$('pickPricePdf').disabled;
+}
+$('importPrices').onclick=()=>{
+ if(!canManage())return;
+ resetImport();
+ $('importSource').value='';
+ $('importVendor').value='';
+ syncImportSource();
+ pdfDialog.showModal();
+};
+$('importSource').onchange=syncImportSource;
+$('importVendor').oninput=syncImportSource;
+$('cancelImport').onclick=()=>pdfDialog.close();
+pdfDialog.onclose=resetImport;
+$('pickPricePdf').onclick=()=>$('pricePdf').click();
+function parsePrice(value){
+ const clean=value.trim().replace(/^rp\.?\s*/i,'').replace(/(?:,00|\.00)$/,'');
+ if(!/^(?:\d+|\d{1,3}(?:[., ]\d{3})+)$/.test(clean))return null;
+ const amount=Number(clean.replace(/[., ]/g,''));
+ return Number.isSafeInteger(amount)?amount:null;
+}
+function extractPriceRows(lines){
+ const result=[];
+ let header;
+ for(const cells of lines){
+  const priceHeaders=cells.filter(cell=>/harga|tarif|unit cost|biaya satuan/i.test(cell.text));
+  if(priceHeaders.length){
+   header=priceHeaders.find(cell=>/harga satuan|unit cost|harga unit|biaya satuan/i.test(cell.text))??priceHeaders.at(-1);
+   continue;
+  }
+  const numbers=cells.map((cell,index)=>({cell,index,price:parsePrice(cell.text)}))
+   .filter(entry=>entry.price!==null&&entry.index>0);
+  if(!numbers.length)continue;
+  const price=header?numbers.reduce((best,next)=>Math.abs(next.cell.x-header.x)<Math.abs(best.cell.x-header.x)?next:best):numbers.at(-1);
+  const name=cells.slice(0,price.index).map(cell=>cell.text).filter(part=>!/^\d+[.)]?$|^rp\.?$/i.test(part)).join(' ').trim();
+  if(!/[a-z]/i.test(name)||/^(?:sub\s*total|total|jumlah|grand total|ppn|diskon)(?:\s|$)/i.test(name))continue;
+  result.push({name:name.slice(0,120),cost:price.price});
+ }
+ return result;
+}
+function pdfLines(items){
+ const rows=[];
+ for(const item of [...items].sort((a,b)=>b.transform[5]-a.transform[5])){
+  if(!item.str.trim())continue;
+  const y=item.transform[5];
+  let row=rows.at(-1);
+  if(!row||Math.abs(row.y-y)>3){row={y,parts:[]};rows.push(row);}
+  row.parts.push(item);
+ }
+ return rows.map(row=>{
+  const cells=[];
+  for(const item of row.parts.sort((a,b)=>a.transform[4]-b.transform[4])){
+   const x=item.transform[4], text=item.str.trim(), previous=cells.at(-1);
+   if(previous&&x-previous.end<11&&!(parsePrice(text)!==null&&/^[a-z]/i.test(previous.text)&&!/^rp\.?$/i.test(previous.text))){
+    previous.text+=' '+text;previous.end=x+item.width;
+   }else cells.push({x,text,end:x+item.width});
+  }
+  return cells;
+ });
+}
+const pdfLibrary='https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/';
+let ocrLibrary;
+async function recognizePricePage(page){
+ ocrLibrary??=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');
+  script.src='https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+  script.onload=()=>resolve(window.Tesseract);
+  script.onerror=()=>{ocrLibrary=undefined;reject(Error('OCR tidak dapat dimuat.'));};
+  document.head.append(script);
+ });
+ const ocr=await ocrLibrary;
+ const worker=await ocr.createWorker('ind+eng',1,{
+  workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js',
+  corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0'
+ });
+ try{
+  const canvas=document.createElement('canvas');
+  const viewport=page.getViewport({scale:Math.min(2.4,2600/Math.max(...page.getViewport({scale:1}).viewBox.slice(2)))});
+  canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  const {data}=await worker.recognize(canvas,{}, {blocks:true});
+  const words=(data.blocks??[]).flatMap(block=>block.paragraphs.flatMap(paragraph=>paragraph.lines.flatMap(line=>line.words)));
+  return pdfLines(words.map(({text,bbox})=>({str:text,width:bbox.x1-bbox.x0,transform:[1,0,0,1,bbox.x0,-bbox.y1]})));
+ }finally{await worker.terminate();}
+}
+$('pricePdf').onchange=async ()=>{
+ const file=$('pricePdf').files[0];
+ if(!file||!canManage())return;
+ resetImport();
+ const run=pdfRun;
+ if(file.size>15*1024*1024){$('importStatus').textContent='Ukuran PDF maksimal 15 MB.';return;}
+ $('importStatus').textContent='Membaca PDF…';
+ let pdf;
+ try{
+  const lib=await import(pdfLibrary+'pdf.min.mjs');
+  lib.GlobalWorkerOptions.workerSrc=pdfLibrary+'pdf.worker.min.mjs';
+  pdf=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
+  const found=[];
+  let failedPages=0;
+  for(let i=1;i<=pdf.numPages&&run===pdfRun;i++){
+   $('importStatus').textContent='Membaca halaman '+i+' dari '+pdf.numPages+'…';
+   const page=await pdf.getPage(i);
+   const content=await page.getTextContent();
+   let rows=extractPriceRows(pdfLines(content.items));
+   if(!rows.length){
+    try{rows=extractPriceRows(await recognizePricePage(page));}
+    catch{failedPages++;}
+   }
+   found.push(...rows);
+  }
+  if(run!==pdfRun)return;
+  if(!found.length){$('importStatus').textContent='Tidak ada pasangan nama dan harga yang terbaca. Coba PDF yang lebih jelas.';return;}
+  for(const item of found){
+   const row=$('importRows').insertRow();
+   const check=document.createElement('input');
+   check.type='checkbox';check.checked=true;check.setAttribute('aria-label','Impor '+item.name);
+   row.insertCell().append(check);
+   const name=document.createElement('input');
+   name.value=item.name;name.maxLength=120;name.setAttribute('aria-label','Nama item');
+   row.insertCell().append(name);
+   const cost=document.createElement('input');
+   cost.type='number';cost.min='0';cost.step='1';cost.value=item.cost;cost.setAttribute('aria-label','Harga item');
+   row.insertCell().append(cost);
+  }
+  $('importStatus').textContent=found.length+' baris terdeteksi. Periksa harga dan hapus centang untuk baris yang tidak perlu.'+(failedPages?' OCR gagal pada '+failedPages+' halaman.':'');
+  $('importPreview').hidden=false;$('applyImport').hidden=false;
+ }catch{if(run===pdfRun)$('importStatus').textContent='PDF tidak bisa dibaca. Periksa file dan koneksi, lalu coba lagi.';}
+ finally{if(pdf)await pdf.destroy();}
+};
+$('applyImport').onclick=()=>{
+ if(!canManage()||$('pickPricePdf').disabled)return;
+ const rows=[...$('importRows').rows].map(row=>[...row.querySelectorAll('input')]).filter(([check])=>check.checked);
+ if(!rows.length||rows.some(([,name,cost])=>!name.value.trim()||!cost.value||!cost.checkValidity())){
+  $('importStatus').textContent='Pilih minimal satu baris dan isi nama serta harga yang valid.';return;
+ }
+ for(const [,name,cost] of rows)$('units').append(refRow({
+  id:uid(),name:name.value.trim(),cost:Number(cost.value),category:4,source:$('importSource').value,vendor:$('importVendor').value.trim()
+ },false));
+ $('refStatus').textContent=rows.length+' item ditambahkan. Klik Simpan referensi untuk menyimpan.';
+ pdfDialog.close();
+};
+</script>
 </body>
 </html>
+
 
 
