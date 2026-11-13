@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kalkulator Paket MCU</title>
+<meta name="description" content="Susun paket Medical Check-Up, hitung biaya pemeriksaan dan operasional, serta siapkan penawaran MCU perorangan dan perusahaan.">
+<link rel="canonical" href="https://dinsudiro.github.io/kalkulator-mcu/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dinsudiro.github.io/kalkulator-mcu/">
+<meta property="og:title" content="Kalkulator Paket MCU">
+<meta property="og:description" content="Susun paket Medical Check-Up, hitung biaya pemeriksaan dan operasional, serta siapkan penawaran MCU perorangan dan perusahaan.">
 <link id="brandFavicon" rel="icon">
 <style>
 :root{font:15px/1.5 "DM Sans",system-ui,sans-serif;color:#102d30;background:#f3f6f5;--muted:#526b6a;--line:#dce6e2;--green:#086253;--light:#e6f3ee}
@@ -62,7 +68,10 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <form id="configForm" class="panel stack"><h2>Identitas instansi</h2><div class="fields">
 <label>Nama instansi<input name="institution" maxlength="120" placeholder="Contoh: RS Ummi"></label>
 <label>Logo instansi<input name="institutionLogo" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG, atau WebP. Logo juga digunakan sebagai ikon tab.</small></label>
-</div><div class="actions"><img id="brandPreview" width="56" height="56" style="object-fit:contain" alt="Logo instansi saat ini" hidden><label class="check"><input name="removeLogo" type="checkbox">Hapus logo saat disimpan</label></div><h2>Pengaturan tarif bawaan</h2><div class="fields">
+</div><div class="actions"><img id="brandPreview" width="56" height="56" style="object-fit:contain" alt="Logo instansi saat ini" hidden><label class="check"><input name="removeLogo" type="checkbox">Hapus logo saat disimpan</label></div><h2>SEO halaman publik</h2><div class="fields">
+<label>Judul SEO<input name="seoTitle" maxlength="70" placeholder="Kalkulator Paket MCU"></label>
+<label>Deskripsi SEO<textarea name="seoDescription" maxlength="170" rows="3" style="font:inherit;width:100%"></textarea></label>
+</div><p class="note">Judul dan deskripsi dapat dibaca publik. Kosongkan untuk memakai metadata bawaan.</p><h2>Pengaturan tarif bawaan</h2><div class="fields">
 <label>Margin (%)<input name="margin" type="number" min="0" step="0.01" required></label>
 <label>PPN simulasi (%)<input name="tax" type="number" min="0" step="0.01" required></label>
 <label>Referral fee (%)<input name="fee" type="number" min="0" step="0.01" required></label>
@@ -640,6 +649,8 @@ function applyRole(){
  const configForm=$('configForm');
  configForm.reset();
  configForm.elements.institution.value=defaults.brand?.name??'';
+ configForm.elements.seoTitle.value=defaults.brand?.seoTitle??'';
+ configForm.elements.seoDescription.value=defaults.brand?.seoDescription??'';
  showBrandPreview(defaults.brand);
  for(const [name,value] of Object.entries({margin:12,tax:11,fee:5,step:10000,...defaults.settings}))configForm.elements[name].value=value;
  for(const id of ['configStatus','accountStatus','documentStatus'])$(id).textContent='';
@@ -672,7 +683,7 @@ $('configForm').onsubmit=async event=>{
   const file=form.elements.institutionLogo.files[0];
   const logo=file?await resizeBrandLogo(file):form.elements.removeLogo.checked?'':defaults.brand?.logo??'';
   if(token!==session)return;
-  const brand={name:form.elements.institution.value.trim(),logo};
+  const brand={name:form.elements.institution.value.trim(),logo,seoTitle:form.elements.seoTitle.value.trim(),seoDescription:form.elements.seoDescription.value.trim()};
   if(await saveSharedReference({...defaults,settings,brand},'configStatus','Konfigurasi tersimpan.')){
    renderBrand(brand);
    showBrandPreview(brand);
@@ -1049,6 +1060,25 @@ async function renderDashboard(){
 </script>
 <script>
 const brandKey='mcu-institution-brand';
+const seoDefault=document.querySelector('meta[name="description"]').content;
+function renderSeo(seo,name=''){
+ const title=seo?.title?.trim()||(name?name+' | Kalkulator MCU':'Kalkulator Paket MCU');
+ const description=seo?.description?.trim()||seoDefault;
+ document.title=title;
+ document.querySelector('meta[name="description"]').content=description;
+ document.querySelector('meta[property="og:title"]').content=title;
+ document.querySelector('meta[property="og:description"]').content=description;
+}
+window.addEventListener('DOMContentLoaded',async()=>{
+ try{
+  if(!configured())return;
+  const response=await request('/rest/v1/rpc/mcu_public_seo');
+  if(response.ok){
+   const seo=await response.json();
+   if(!session)renderSeo(seo);
+  }
+ }catch{}
+});
 function brandImage(brand){
  return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(brand?.logo??'')?brand.logo:'';
 }
@@ -1056,7 +1086,7 @@ function renderBrand(brand){
  const name=typeof brand?.name==='string'?brand.name.trim().slice(0,120):'';
  const logo=brandImage(brand);
  $('brandName').textContent=name||'Kalkulator MCU';
- document.title=name?name+' | Kalkulator MCU':'Kalkulator Paket MCU';
+ renderSeo({title:brand?.seoTitle,description:brand?.seoDescription},name);
  $('brandMark').hidden=Boolean(logo);
  $('brandLogo').hidden=!logo;
  if(logo){$('brandLogo').src=logo;$('brandFavicon').href=logo;}
@@ -1090,5 +1120,6 @@ try{renderBrand(JSON.parse(localStorage.getItem(brandKey)));}catch{}
 
 
 <!-- Shared package dashboard -->
+
 
 
