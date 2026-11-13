@@ -509,6 +509,34 @@ $('accountForm').onsubmit=async event=>{
  finally{form.elements.password.value='';button.disabled=false;}
 };
 const bucket='mcu-price-docs';
+const compressedDocument=/^mcu-gzip-v1_[a-f0-9-]{36}_([A-Za-z0-9_-]+)$/;
+function documentName(key){
+ const encoded=key.match(compressedDocument)?.[1];
+ if(encoded){
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')),char=>char.charCodeAt(0)));}
+  catch{}
+ }
+ return key.replace(/^[a-f0-9-]{36}_/,'');
+}
+async function prepareDocument(file){
+ const id=crypto.randomUUID();
+ const original={key:id+'_'+file.name.replace(/[^a-zA-Z0-9._ -]/g,'_').slice(-140),blob:file};
+ if(typeof CompressionStream!=='function'||typeof DecompressionStream!=='function')return original;
+ try{
+  const encoded=btoa(Array.from(new TextEncoder().encode(file.name),byte=>String.fromCharCode(byte)).join('')).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const key='mcu-gzip-v1_'+id+'_'+encoded;
+  if(key.length>1024)return original;
+  const stream=file.stream().pipeThrough(new CompressionStream('gzip'));
+  const bytes=await new Response(stream).arrayBuffer();
+  if(bytes.byteLength>=file.size)return original;
+  return {key,blob:new Blob([bytes],{type:'application/gzip'})};
+ }catch{return original;}
+}
+async function restoreDocument(blob,key){
+ if(!compressedDocument.test(key))return blob;
+ if(typeof DecompressionStream!=='function')throw Error('Browser ini belum mendukung pengunduhan dokumen terkompresi.');
+ return new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).blob();
+}
 async function listPriceDocuments(){
  if(!canManage())return;
  const token=session;
@@ -523,18 +551,18 @@ async function listPriceDocuments(){
    const button=document.createElement('button');
    button.type='button';
    button.className='btn';
-   button.textContent=file.name.replace(/^[a-f0-9-]{36}_/,'');
+   button.textContent=documentName(file.name);
    button.onclick=async ()=>{
     try{
      const response=await request('/storage/v1/object/authenticated/'+bucket+'/'+encodeURIComponent(file.name),{token});
      if(!response.ok)throw Error();
-     const blob=await response.blob();
+     const blob=await restoreDocument(await response.blob(),file.name);
      if(session!==token)return;
      const url=URL.createObjectURL(blob);
      const link=document.createElement('a');
      link.href=url;link.download=button.textContent;link.click();
      setTimeout(()=>URL.revokeObjectURL(url),1000);
-    }catch{if(session===token)$('documentStatus').textContent='Dokumen tidak dapat diunduh.';}
+    }catch(error){if(session===token)$('documentStatus').textContent=typeof DecompressionStream!=='function'&&compressedDocument.test(file.name)?'Gunakan browser yang mendukung pengunduhan dokumen terkompresi.':'Dokumen tidak dapat diunduh.';}
    };
    $('documentList').append(button);
   }
@@ -551,14 +579,16 @@ $('documentForm').onsubmit=async event=>{
  const token=session;
  const button=form.querySelector('button');
  button.disabled=true;
- const name=crypto.randomUUID()+'_'+file.name.replace(/[^a-zA-Z0-9._ -]/g,'_').slice(-140);
  try{
-  const body=new FormData();body.append('file',file);
+  $('documentStatus').textContent='Menyiapkan dokumen…';
+  const {key:name,blob}=await prepareDocument(file);
+  if(session!==token)return;
+  const body=new FormData();body.append('file',blob,name);
   const response=await request('/storage/v1/object/'+bucket+'/'+encodeURIComponent(name),{token,method:'POST',body});
   if(!response.ok)throw Error();
   if(session!==token)return;
   form.reset();
-  $('documentStatus').textContent='Dokumen berhasil diunggah.';
+  $('documentStatus').textContent=blob.size<file.size?'Dokumen berhasil diunggah. Ukuran berkurang '+Math.round((1-blob.size/file.size)*100)+'%.':'Dokumen berhasil diunggah.';
   await listPriceDocuments();
  }catch{if(session===token)$('documentStatus').textContent='Dokumen gagal diunggah.';}
  finally{button.disabled=false;}
@@ -733,6 +763,7 @@ $('applyImport').onclick=()=>{
 </script>
 </body>
 </html>
+
 
 
 
