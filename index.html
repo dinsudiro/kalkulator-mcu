@@ -24,7 +24,7 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
  </form>
 </section>
 <div id="protectedApp" hidden>
-<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button data-tab="configuration" hidden>Konfigurasi</button><button data-tab="documents" hidden>Dokumen Harga</button><button id="logout">Keluar</button></nav></div></header>
+<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button data-tab="configuration" hidden>Konfigurasi</button><button data-tab="documents" hidden>Dokumen Harga</button><button data-tab="dashboard" hidden>Dashboard</button><button id="logout">Keluar</button></nav></div></header>
 <main class="wrap">
 <section id="builder">
 <h1>Susun paket MCU</h1><p class="intro">Pilih pemeriksaan dan simulasikan tarif per peserta serta total penawaran.</p>
@@ -56,7 +56,7 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <section class="panel"><h2>Biaya operasional kegiatan</h2><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Harga satuan (Rp)</th><th>Subtotal</th><th>Aksi</th></tr></thead><tbody id="ops"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addOp">+ Tambah biaya operasional</button><strong id="refTotal"></strong></div><p class="note">Harga yang kosong di lampiran diisi Rp 0. Ubah nilainya jika ada biaya yang perlu dialokasikan.</p></section>
 <div class="actions"><button class="btn primary" type="submit">Simpan referensi</button><button class="btn" type="button" id="discard">Batalkan perubahan</button></div><p class="status" id="refStatus" role="status"></p>
 </form></section>
-<section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Paket disimpan di browser ini. Referensi biaya dibagikan melalui database. Paket tersimpan menyimpan salinan biaya saat dibuat.</p><div class="stack" id="savedList"></div></section>
+<section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Daftar paket sesuai akses akun Anda.</p><button type="button" class="btn" id="importLocalPackages" hidden>Impor paket dari browser ini</button><p id="savedStatus" role="status"></p><div class="stack" id="savedList"></div></section>
 <section id="configuration" hidden><h1>Konfigurasi</h1>
 <form id="configForm" class="panel stack"><h2>Pengaturan tarif bawaan</h2><div class="fields">
 <label>Margin (%)<input name="margin" type="number" min="0" step="0.01" required></label>
@@ -72,9 +72,158 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <section id="documents" hidden><h1>Dokumen Referensi Harga</h1><form id="documentForm" class="panel stack">
 <label>Pilih dokumen (maks. 10 MB)<input name="document" type="file" accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.png,.jpg,.jpeg" required></label>
 <div><button class="btn primary">Unggah dokumen</button></div><p id="documentStatus" role="status"></p><div id="documentList" class="stack"></div></form></section>
-</main>
+<section id="dashboard" hidden><h1>Dashboard MCU</h1><div class="stack" id="dashboardContent"></div></section></main>
 </div>
-<script src="excel.js" defer></script>
+<script>
+'use strict';
+
+function exportRows(pkg, format) {
+ const {values, refs, result} = pkg;
+ const items = refs.units.filter(item => pkg.selected.includes(item.id));
+ const client = format === 'klien';
+ const offerColumn = client ? 0 : 5;
+ const rows = [];
+ const merges = [];
+ function put(row, col, value, style = 0) {
+  rows[row - 1] ??= [];
+  rows[row - 1].push({col, value, style});
+ }
+ function offer(row, index, value, style) {
+  put(row, offerColumn + index, value, style);
+ }
+ if (!client) {
+  put(1, 0, values.name, 1);
+  merges.push('A1:C1');
+  put(2, 1, 'Jumlah orang');
+  put(2, 2, result.people);
+  ['No.', 'Parameter Pemeriksaan', 'Unit Cost'].forEach((label, col) => put(3, col, label, 1));
+  items.forEach((item, index) => {
+   put(4 + index, 0, index + 1);
+   put(4 + index, 1, item.name);
+   put(4 + index, 2, item.cost, 2);
+  });
+  const summary = [
+   ['Operasional Cost', result.operating], ['Total Unit Cost', result.cost],
+   ['Margin ' + values.margin + '%', result.margin], ['PPN ' + values.tax + '%', result.tax],
+   ['Tarif Usulan', result.beforeFee], ['Referral Fee ' + values.fee + '%', result.fee],
+   ['Tarif Jual', result.offer],
+   [values.manual === '' ? 'Pembulatan' : 'Tarif Akhir Manual', result.final],
+   ['Total Penawaran', result.total]
+  ];
+  summary.forEach(([label, value], index) => {
+   const row = 4 + items.length + index;
+   put(row, 1, label, index === 2 ? 6 : index >= 7 ? 8 : 0);
+   put(row, 2, value, index === 2 ? 7 : index >= 7 ? 9 : 2);
+  });
+ }
+ offer(1, 0, values.name, 1);
+ offer(2, 0, 'Dibuat oleh', 0);
+ offer(2, 1, pkg.creator || 'Tidak tercatat', 0);
+ merges.push(client ? 'A1:C1' : 'F1:H1');
+ ['No.', 'Parameter Pemeriksaan', 'Tarif Penawaran / Orang'].forEach((label, col) => offer(3, col, label, 3));
+ items.forEach((item, index) => {
+  offer(4 + index, 0, index + 1, 5);
+  offer(4 + index, 1, item.name, 4);
+  offer(4 + index, 2, index === 0 ? result.final : '', 10);
+ });
+ const tariffCol = client ? 'C' : 'H';
+ if (items.length > 1) merges.push(tariffCol + '4:' + tariffCol + (3 + items.length));
+ return {rows, merges};
+}
+
+const xlsxNs = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const officeRel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const packageRel = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const xmlHeader = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+function excelXml(value) {
+ return String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g,'')
+  .replace(/[<>&"']/g, character => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'})[character]);
+}
+
+function workbookParts({rows, merges}, format) {
+ const client = format === 'klien';
+ const columns = (client ? [8, 46, 25] : [8, 46, 18, 5, 5, 8, 46, 25]).map((width, i) =>
+  '<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>').join('');
+ const body = rows.map((row, index) => {
+  const rowNumber = index + 1;
+  const height = index === 0 ? 44 : index === 2 ? 27 : 25;
+  return '<row r="'+rowNumber+'" ht="'+height+'" customHeight="1">'+row.map(({col, value, style}) => {
+   const ref = String.fromCharCode(65+col)+rowNumber;
+   if(typeof value === 'number') return '<c r="'+ref+'" s="'+style+'"><v>'+value+'</v></c>';
+   return '<c r="'+ref+'" s="'+style+'" t="inlineStr"><is><t xml:space="preserve">'+excelXml(value)+'</t></is></c>';
+  }).join('')+'</row>';
+ }).join('');
+ const mergeXml = '<mergeCells count="'+merges.length+'">'+merges.map(ref=>'<mergeCell ref="'+ref+'"/>').join('')+'</mergeCells>';
+ const formats = [
+  [0,0,0,0,'left'], [0,1,0,0,'center'], [3,0,0,0,'right'],
+  [0,1,0,1,'center'], [0,0,0,1,'left'], [0,0,0,1,'center'],
+  [0,0,2,0,'left'], [3,0,2,0,'right'], [0,1,0,0,'left'], [3,1,0,0,'right'], [3,1,0,1,'center']
+ ];
+ const xfs = formats.map(([numFmtId,fontId,fillId,borderId,horizontal]) =>
+  `<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="${horizontal}" vertical="center" wrapText="1"/></xf>`).join('');
+ const styles = `<styleSheet xmlns="${xlsxNs}">
+ <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
+ <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills>
+ <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border></borders>
+ <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+ <cellXfs count="${formats.length}">${xfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+ </styleSheet>`;
+ return {
+  '[Content_Types].xml':'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+  '_rels/.rels':`<Relationships xmlns="${packageRel}"><Relationship Id="rId1" Type="${officeRel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+  'xl/workbook.xml':`<workbook xmlns="${xlsxNs}" xmlns:r="${officeRel}"><sheets><sheet name="${client?'Penawaran MCU':'Perhitungan MCU'}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+  'xl/_rels/workbook.xml.rels':`<Relationships xmlns="${packageRel}"><Relationship Id="rId1" Type="${officeRel}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${officeRel}/styles" Target="styles.xml"/></Relationships>`,
+  'xl/styles.xml':styles,
+  'xl/worksheets/sheet1.xml':`<worksheet xmlns="${xlsxNs}"><cols>${columns}</cols><sheetData>${body}</sheetData>${mergeXml}</worksheet>`
+ };
+}
+
+const crcTable = Uint32Array.from({length:256}, (_, index) => {
+ let value = index;
+ for(let bit=0; bit<8; bit++) value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+ return value;
+});
+
+function excelZip(parts) {
+ const encoder = new TextEncoder();
+ const local = [], central = [];
+ let offset = 0, centralSize = 0;
+ function header(size, words, shorts) {
+  const view = new DataView(new ArrayBuffer(size));
+  for(const [at,value] of words) view.setUint32(at,value,true);
+  for(const [at,value] of shorts) view.setUint16(at,value,true);
+  return view.buffer;
+ }
+ for(const [path, xml] of Object.entries(parts)) {
+  const name = encoder.encode(path);
+  const bytes = encoder.encode(xmlHeader + xml);
+  let crc = 0xffffffff;
+  for(const byte of bytes) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 255];
+  crc = (crc ^ 0xffffffff) >>> 0;
+  local.push(header(30,[[0,0x04034b50],[14,crc],[18,bytes.length],[22,bytes.length]],[[4,20],[12,33],[26,name.length]]),name,bytes);
+  central.push(header(46,[[0,0x02014b50],[16,crc],[20,bytes.length],[24,bytes.length],[42,offset]],[[4,20],[6,20],[14,33],[28,name.length]]),name);
+  offset += 30 + name.length + bytes.length;
+  centralSize += 46 + name.length;
+ }
+ const count = Object.keys(parts).length;
+ const end = header(22,[[0,0x06054b50],[12,centralSize],[16,offset]],[[8,count],[10,count]]);
+ return new Blob([...local,...central,end],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+function downloadPackage(pkg, format) {
+ const file = excelZip(workbookParts(exportRows(pkg,format),format));
+ const slug = pkg.values.name.normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu,'-').replace(/^-|-$/g,'').slice(0,70) || 'paket-mcu';
+ const url = URL.createObjectURL(file);
+ const link = document.createElement('a');
+ link.href = url;
+ link.download = slug + '-' + format + '.xlsx';
+ document.body.append(link);
+ link.click();
+ link.remove();
+ setTimeout(() => URL.revokeObjectURL(url),30000);
+}
+
+</script>
 <script src="auth-config.js" defer></script>
 
 <script>
@@ -109,8 +258,9 @@ function openTab(tab){
   const active=button.dataset.tab===tab;button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
  });
- ['builder','reference','saved','configuration','documents'].forEach(id=>{$(id).hidden=id!==tab;});
- if(tab==='saved')renderSaved();
+ ['builder','reference','saved','configuration','documents','dashboard'].forEach(id=>{$(id).hidden=id!==tab;});
+ if(tab==='saved')refreshSaved();
+ if(tab==='dashboard')renderDashboard();
  if(tab==='documents')listPriceDocuments();
 }
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.tab));
@@ -195,7 +345,7 @@ function update(){
  $('count').textContent=picked().length+' dipilih';
  $('price').textContent=usable?rp(result.final):'—';
  $('total').textContent=usable?rp(result.total)+' total · '+money.format(result.people)+' peserta':'Pilih komponen dan isi pengaturan tarif.';
- $('save').disabled=!usable;
+ $('save').disabled=!usable||writingPackage;
  $('breakdown').innerHTML=usable?[
   ['Unit cost komponen',result.direct],['Operasional per peserta',result.operating],['Total unit cost',result.cost],
   ['Margin / markup',result.margin],['PPN simulasi',result.tax],['Tarif sebelum referral',result.beforeFee],
@@ -244,36 +394,47 @@ fields.forEach(id=>{$(id).oninput=()=>{
  }
  update();
 };});
-$('save').onclick=()=>{
+$('save').onclick=async()=>{
  const values=readFields();
  if(!values.name.trim()){$('builderStatus').textContent='Isi nama paket sebelum menyimpan.';$('name').focus();return;}
  const id=editId||uid();
  const refs=copy(activeRefs());
  const operations=chosenOperations();
  const pkg={id,values,refs,operations:[...operatingSelection],selected:[...selected],result:calculate(values,picked(),operations)};
- const packages=[pkg,...data.packages.filter(item=>item.id!==id)];
- if(persist({...data,packages},'builderStatus','Paket tersimpan.'))editId=id;
+ const token=session;
+ const updating=Boolean(editId);
+ $('save').disabled=true;
+ try{
+  await writePackage(pkg,updating,token);
+  if(token===session){editId=id;$('builderStatus').textContent='Paket tersimpan.';}
+ }catch{if(token===session)$('builderStatus').textContent='Paket gagal disimpan.';}
+ finally{if(token===session)update();}
 };
 function renderSaved(){
- $('savedList').innerHTML=data.packages.map(pkg=>'<article class="panel"><h2>'+escape(pkg.values.name)+'</h2><p class="muted">'+(pkg.values.type==='corporate'?'Perusahaan':'Perorangan')+' · '+money.format(pkg.result.people)+' peserta · '+pkg.selected.length+' komponen</p><p><strong>'+rp(pkg.result.final)+'</strong> / peserta · '+rp(pkg.result.total)+' total</p><div class="actions"><button class="btn" data-open="'+escape(pkg.id)+'">Buka paket</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="klien">Unduh Excel Klien</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="internal">Unduh Excel Internal</button><button class="btn danger" data-delete="'+escape(pkg.id)+'">Hapus</button></div></article>').join('')||'<div class="panel muted">Belum ada paket tersimpan.</div>';
+ $('savedList').innerHTML=data.packages.map(pkg=>'<article class="panel"><h2>'+escape(pkg.values.name)+'</h2><p class="muted">'+(pkg.values.type==='corporate'?'Perusahaan':'Perorangan')+' · '+money.format(pkg.result.people)+' peserta · '+pkg.selected.length+' komponen</p><p>Dibuat oleh <strong>'+escape(pkg.creator||'Tidak tercatat')+'</strong></p><p><strong>'+rp(pkg.result.final)+'</strong> / peserta · '+rp(pkg.result.total)+' total</p><div class="actions"><button class="btn" data-open="'+escape(pkg.id)+'">'+(pkg.owner===currentUser?'Buka paket':'Lihat paket')+'</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="klien">Unduh Excel Klien</button><button class="btn" data-download="'+escape(pkg.id)+'" data-format="internal">Unduh Excel Internal</button>'+(pkg.owner===currentUser?'<button class="btn danger" data-delete="'+escape(pkg.id)+'">Hapus</button>':'')+'</div></article>').join('')||'<div class="panel muted">Belum ada paket tersimpan.</div>';
 }
-$('savedList').onclick=event=>{
+$('savedList').onclick=async event=>{
  const {open,delete:remove,download,format}=event.target.dataset;
  if(download)downloadPackage(data.packages.find(item=>item.id===download),format);
  if(open){
   const pkg=data.packages.find(item=>item.id===open);
-  snapshot=copy(pkg.refs);editId=pkg.id;selected=new Set(pkg.selected);
+  snapshot=copy(pkg.refs);editId=pkg.owner===currentUser?pkg.id:null;selected=new Set(pkg.selected);
   operatingSelection=new Map(pkg.operations??operationOptions().filter(({item})=>item.qty>0).map(({key,item})=>[key,String(item.qty)]));
   renderOperations();
   fields.forEach(id=>{$(id).value=pkg.values[id];});
   $('search').value='';$('builderStatus').textContent='Paket ini memakai salinan referensi saat disimpan.';
   openTab('builder');renderPicker();
+  if(pkg.owner!==currentUser)$('builderStatus').textContent='Paket milik '+pkg.creator+'. Jika disimpan, paket ini menjadi salinan baru milik Anda.';
  }
  if(remove&&confirm('Hapus paket tersimpan ini?')){
-  if(persist({...data,packages:data.packages.filter(item=>item.id!==remove)},'builderStatus','Paket dihapus.')){
+  const token=session;
+  try{
+   const response=await request(packagePath+'?id=eq.'+encodeURIComponent(remove),{token,method:'DELETE',prefer:'return=representation'});
+   if(!response.ok||!(await response.json()).length)throw Error();
+   if(token!==session)return;
    if(editId===remove)editId=null;
-   renderSaved();
-  }else alert('Paket belum berhasil dihapus.');
+   await refreshSaved();
+  }catch{if(token===session)$('savedStatus').textContent='Paket gagal dihapus.';}
  }
 };
 function numberInput(field,label,value){
@@ -351,10 +512,12 @@ $('refForm').onsubmit=async event=>{
  }
 };
 function initializeCalculator(reference, userId){
+ currentUser=userId;
  defaults=reference;
  $('example').hidden=!reference.example;
  key='kalkulator-mcu-v1:'+userId;
- data={...load(),refs:{units:reference.units,ops:reference.ops}};
+ data={packages:[],refs:{units:reference.units,ops:reference.ops}};
+ $('importLocalPackages').hidden=!load().packages.length;
  $('refStatus').textContent='';
  renderReference();
  start();
@@ -370,6 +533,7 @@ const loginForm = document.getElementById('loginForm');
 const loginStatus = document.getElementById('loginStatus');
 let session;
 let appRole;
+let currentUser;
 let expiryTimer;
 
 function configured() {
@@ -392,6 +556,8 @@ function lock(message) {
  clearTimeout(expiryTimer);
  session = undefined;
  appRole = undefined;
+ currentUser=undefined;
+ $('dashboardContent').replaceChildren();
  if($('priceImport').open)$('priceImport').close();
  $('accountForm').reset(); $('documentForm').reset(); $('documentList').replaceChildren();
  data = undefined;
@@ -455,6 +621,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 const canManage=()=>['super_admin','supervisor'].includes(appRole);
 function applyRole(){
+ document.querySelector('[data-tab="dashboard"]').hidden=appRole!=='super_admin';
  $('importPrices').hidden=!canManage();
  for(const tab of ['configuration','documents'])document.querySelector('[data-tab="'+tab+'"]').hidden=!canManage();
  $('accountForm').hidden=appRole!=='super_admin';
@@ -761,8 +928,104 @@ $('applyImport').onclick=()=>{
  pdfDialog.close();
 };
 </script>
+<script>
+
+const packagePath='/rest/v1/mcu_packages';
+let savedRequest=0;
+let writingPackage=false;
+async function fetchPackages(token){
+ const all=[];
+ for(let offset=0;;offset+=200){
+  const response=await request(packagePath+'?select=id,owner_id,creator,created_at,payload&order=created_at.desc,id.asc&limit=200&offset='+offset,{token});
+  if(!response.ok)throw Error();
+  const rows=await response.json();
+  all.push(...rows.map(row=>({...row.payload,id:row.id,creator:row.creator,owner:row.owner_id,createdAt:row.created_at})));
+  if(rows.length<200)return all;
+ }
+}
+async function writePackage(pkg,updating,token){
+ if(writingPackage)throw Error();
+ writingPackage=true;
+ try{
+  const path=packagePath+(updating?'?id=eq.'+encodeURIComponent(pkg.id):'');
+  const response=await request(path,{token,method:updating?'PATCH':'POST',prefer:'return=representation',body:updating?{payload:pkg}:{id:pkg.id,payload:pkg}});
+  if(!response.ok||!(await response.json()).length)throw Error();
+ }finally{writingPackage=false;}
+}
+async function refreshSaved(){
+ const token=session;
+ const run=++savedRequest;
+ $('savedStatus').textContent='Memuat paket…';
+ $('savedList').replaceChildren();
+ try{
+  const packages=await fetchPackages(token);
+  if(token!==session||run!==savedRequest)return;
+  data.packages=packages;
+  renderSaved();
+  $('savedStatus').textContent='';
+ }catch{if(token===session&&run===savedRequest)$('savedStatus').textContent='Daftar paket gagal dimuat.';}
+}
+$('importLocalPackages').onclick=async()=>{
+ const token=session, localKey=key, user=currentUser;
+ const button=$('importLocalPackages');
+ button.disabled=true;
+ try{
+  const local=load();
+  const existing=new Set((await fetchPackages(token)).filter(pkg=>pkg.owner===user).map(pkg=>pkg.id));
+  for(const pkg of local.packages){
+   if(token!==session)return;
+   if(!existing.has(pkg.id))await writePackage(pkg,false,token);
+  }
+  if(token!==session)return;
+  localStorage.setItem(localKey,JSON.stringify({...local,packages:[]}));
+  button.hidden=true;
+  await refreshSaved();
+ }catch{if(token===session)$('savedStatus').textContent='Impor belum selesai. Coba lagi untuk melanjutkan.';}
+ finally{button.disabled=false;}
+};
+async function renderDashboard(){
+ if(appRole!=='super_admin')return;
+ const token=session;
+ const panel=$('dashboardContent');
+ panel.textContent='Memuat dashboard…';
+ try{
+  const [packages,usersResponse,refsResponse]=await Promise.all([
+   fetchPackages(token),
+   request('/rest/v1/rpc/mcu_dashboard_users',{token,method:'POST',body:{}}),
+   request('/rest/v1/mcu_reference?id=eq.1&select=payload',{token})
+  ]);
+  if(!usersResponse.ok||!refsResponse.ok)throw Error();
+  const [users,[reference]]=await Promise.all([usersResponse.json(),refsResponse.json()]);
+  if(token!==session)return;
+  const units=reference.payload.units;
+  const sources=new Map();
+  let unknown=0;
+  for(const item of units){
+   const label=item.source==='internal'?'Internal Ummi':item.source==='vendor'&&item.vendor?'Vendor · '+item.vendor.trim():null;
+   if(label){
+    const key=label.toLowerCase();
+    const entry=sources.get(key)??{label,count:0};
+    entry.count++;
+    sources.set(key,entry);
+   }else unknown++;
+  }
+  const grouped=new Map(users.map(user=>[user.user_id,{name:user.email,packages:[]}]));
+  for(const pkg of packages){
+   if(!grouped.has(pkg.owner))grouped.set(pkg.owner,{name:pkg.creator||'Tidak tercatat',packages:[]});
+   grouped.get(pkg.owner).packages.push(pkg);
+  }
+  const chart=(label,count,total)=>'<div class="row metric"><span>'+escape(label)+'</span><span><meter aria-label="'+escape(label)+'" min="0" max="'+Math.max(1,total)+'" value="'+count+'"></meter> '+money.format(count)+'</span></div>';
+  const metrics=[['Paket tersimpan',packages.length],['Akun terdaftar',users.length],['Parameter tersedia',units.length],['Sumber tarif',sources.size]];
+  panel.innerHTML='<div class="fields">'+metrics.map(([label,value])=>'<div class="panel"><small>'+label+'</small><h2>'+money.format(value)+'</h2></div>').join('')+'</div>'
+   +'<div class="panel"><h2>Parameter per sumber tarif</h2>'+[...sources.values()].sort((a,b)=>b.count-a.count).map(item=>chart(item.label,item.count,units.length)).join('')+(unknown?chart('Belum ditentukan',unknown,units.length):'')+'</div>'
+   +'<div class="panel"><h2>Paket per pengguna</h2>'+[...grouped.values()].map(user=>'<details><summary>'+chart(user.name,user.packages.length,packages.length)+'</summary>'+(user.packages.length?'<ul>'+user.packages.map(pkg=>'<li>'+escape(pkg.values.name)+' · '+rp(pkg.result.final)+' / peserta</li>').join('')+'</ul>':'<p class="muted">Belum ada paket.</p>')+'</details>').join('')+'</div>';
+ }catch{if(token===session)panel.textContent='Dashboard gagal dimuat.';}
+}
+
+</script>
 </body>
 </html>
+
 
 
 
