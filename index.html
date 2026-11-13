@@ -85,7 +85,7 @@ function exportRows(pkg, format) {
  const {values, refs, result} = pkg;
  const items = refs.units.filter(item => pkg.selected.includes(item.id));
  const client = format === 'klien';
- const offerColumn = client ? 0 : 5;
+ const offerColumn = client ? 0 : 6;
  const rows = [];
  const merges = [];
  function put(row, col, value, style = 0) {
@@ -97,14 +97,16 @@ function exportRows(pkg, format) {
  }
  if (!client) {
   put(1, 0, values.name, 1);
-  merges.push('A1:C1');
+  merges.push('A1:D1');
   put(2, 1, 'Jumlah orang');
   put(2, 2, result.people);
-  ['No.', 'Parameter Pemeriksaan', 'Unit Cost'].forEach((label, col) => put(3, col, label, 1));
+  ['No.', 'Parameter Pemeriksaan', 'Unit Cost', 'Sumber Tarif'].forEach((label, col) => put(3, col, label, 1));
   items.forEach((item, index) => {
    put(4 + index, 0, index + 1);
    put(4 + index, 1, item.name);
    put(4 + index, 2, item.cost, 2);
+   const source = item.source === 'internal' ? 'Internal Ummi' : item.source === 'vendor' ? (item.vendor?.trim() || 'Vendor (nama belum diisi)') : 'Belum ditentukan';
+   put(4 + index, 3, source);
   });
   const summary = [
    ['Operasional Cost', result.operating], ['Total Unit Cost', result.cost],
@@ -123,14 +125,14 @@ function exportRows(pkg, format) {
  offer(1, 0, values.name, 1);
  offer(2, 0, 'Dibuat oleh', 0);
  offer(2, 1, pkg.creator || 'Tidak tercatat', 0);
- merges.push(client ? 'A1:C1' : 'F1:H1');
+ merges.push(client ? 'A1:C1' : 'G1:I1');
  ['No.', 'Parameter Pemeriksaan', 'Tarif Penawaran / Orang'].forEach((label, col) => offer(3, col, label, 3));
  items.forEach((item, index) => {
   offer(4 + index, 0, index + 1, 5);
   offer(4 + index, 1, item.name, 4);
   offer(4 + index, 2, index === 0 ? result.final : '', 10);
  });
- const tariffCol = client ? 'C' : 'H';
+ const tariffCol = client ? 'C' : 'I';
  if (items.length > 1) merges.push(tariffCol + '4:' + tariffCol + (3 + items.length));
  return {rows, merges};
 }
@@ -146,7 +148,7 @@ function excelXml(value) {
 
 function workbookParts({rows, merges}, format) {
  const client = format === 'klien';
- const columns = (client ? [8, 46, 25] : [8, 46, 18, 5, 5, 8, 46, 25]).map((width, i) =>
+ const columns = (client ? [8, 46, 25] : [8, 46, 18, 30, 5, 5, 8, 46, 25]).map((width, i) =>
   '<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+width+'" customWidth="1"/>').join('');
  const body = rows.map((row, index) => {
   const rowNumber = index + 1;
@@ -1088,4 +1090,5 @@ try{renderBrand(JSON.parse(localStorage.getItem(brandKey)));}catch{}
 
 
 <!-- Shared package dashboard -->
+
 
