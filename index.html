@@ -36,8 +36,8 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <label>Jumlah peserta<input id="people" type="number" min="1" step="1" required></label>
 </div><div class="actions"><button class="btn" id="example">Muat contoh lampiran</button><button class="btn" id="new">Paket baru</button><button class="btn" id="useCurrent" hidden>Pakai referensi terbaru</button></div></section>
 <section class="panel"><div class="row"><h2>Komponen paket</h2><small id="count"></small></div><label>Cari komponen<input type="search" id="search" placeholder="Cari pemeriksaan atau fasilitas"></label><div class="actions"><button class="btn" id="all">Pilih semua</button><button class="btn" id="none">Kosongkan pilihan</button></div><div class="picker" id="picker"></div></section>
-<section class="panel"><h2>Pengaturan tarif</h2><div class="fields">
-<label class="wide">Biaya operasional<select id="opsMode"><option value="allocate">Total operasional ÷ jumlah peserta</option><option value="fixed">Nominal tetap per peserta</option><option value="none">Tanpa biaya operasional</option></select></label>
+<section class="panel"><h2>Komponen biaya operasional</h2><p class="muted">Centang item yang dipakai dan isi jumlah untuk kegiatan ini.</p><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Harga satuan</th><th>Subtotal</th></tr></thead><tbody id="packageOps"></tbody></table></div><p class="note" id="packageOpsTotal"></p></section><section class="panel"><h2>Pengaturan tarif</h2><div class="fields">
+<label class="wide">Biaya operasional<select id="opsMode"><option value="allocate">Item operasional terpilih ÷ jumlah peserta</option><option value="fixed">Nominal tetap per peserta</option><option value="none">Tanpa biaya operasional</option></select></label>
 <label id="fixedWrap" class="wide">Operasional tetap (Rp/peserta)<input id="fixed" type="number" min="0" step="1" required></label>
 <label>Margin / markup (%)<input id="margin" type="number" min="0" step="0.01" required></label>
 <label>PPN simulasi (%)<input id="tax" type="number" min="0" step="0.01" required></label>
@@ -89,6 +89,7 @@ function load(){
 }
 let data;
 let snapshot=null;
+let operatingSelection=new Map();
 let editId=null;
 let selected=new Set();
 const $=id=>document.getElementById(id);
@@ -114,10 +115,10 @@ function openTab(tab){
 }
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.tab));
 function readFields(){return Object.fromEntries(fields.map(id=>[id,$(id).value]));}
-function calculate(values,items,refs){
+function calculate(values,items,operations){
  const people=Number(values.people);
  const direct=items.reduce((sum,item)=>sum+item.cost,0);
- const totalOps=opTotal(refs.ops);
+ const totalOps=opTotal(operations);
  const operating=values.opsMode==='allocate'?totalOps/people:values.opsMode==='fixed'?Number(values.fixed):0;
  const cost=direct+operating;
  const margin=cost*Number(values.margin)/100;
@@ -130,6 +131,56 @@ function calculate(values,items,refs){
  const final=values.manual===''?rounded:Number(values.manual);
  return {direct,totalOps,operating,cost,margin,tax,beforeFee,fee,offer,final,total:final*people,people};
 }
+function operationOptions(){
+ const occurrences=new Map();
+ return activeRefs().ops.map(item=>{
+  const count=occurrences.get(item.name)||0;
+  occurrences.set(item.name,count+1);
+  return {item,key:JSON.stringify([item.name,count])};
+ });
+}
+function chosenOperations(){
+ return operationOptions().filter(({key})=>operatingSelection.has(key))
+  .map(({item,key})=>({...item,qty:Number(operatingSelection.get(key))}));
+}
+function renderOperations(){
+ const body=$('packageOps');
+ body.replaceChildren();
+ for(const {item,key} of operationOptions()){
+  const row=body.insertRow();
+  const label=document.createElement('label');
+  label.className='item';
+  const check=document.createElement('input');
+  check.type='checkbox';
+  check.checked=operatingSelection.has(key);
+  label.append(check,document.createTextNode(item.name));
+  row.insertCell().append(label);
+  const qty=document.createElement('input');
+  qty.type='number';
+  qty.min='1';
+  qty.step='1';
+  qty.required=true;
+  qty.setAttribute('aria-label','Jumlah '+item.name);
+  qty.value=operatingSelection.get(key)??Math.max(1,item.qty);
+  qty.disabled=!check.checked;
+  row.insertCell().append(qty);
+  row.insertCell().textContent=rp(item.cost);
+  const subtotal=row.insertCell();
+  function refresh(){
+   subtotal.textContent=check.checked&&qty.checkValidity()?rp(Number(qty.value)*item.cost):'—';
+  }
+  function change(){
+   qty.disabled=!check.checked;
+   if(check.checked)operatingSelection.set(key,qty.value);
+   else operatingSelection.delete(key);
+   refresh();
+   update();
+  }
+  check.onchange=change;
+  qty.oninput=change;
+  refresh();
+ }
+}
 function picked(){return activeRefs().units.filter(item=>selected.has(item.id));}
 function update(){
  const values=readFields();
@@ -137,7 +188,9 @@ function update(){
  $('people').disabled=values.type==='individual';
  $('fixedWrap').hidden=values.opsMode!=='fixed';
  const valid=fields.every(id=>$(id).checkValidity()||id==='fixed'&&values.opsMode!=='fixed');
- const result=valid?calculate(values,picked(),activeRefs()):null;
+ const validOps=[...$('packageOps').querySelectorAll('input[type=number]')].every(input=>input.checkValidity());
+ const result=valid&&validOps?calculate(values,picked(),chosenOperations()):null;
+ $('packageOpsTotal').textContent=validOps?'Total item terpilih: '+rp(opTotal(chosenOperations())):'Isi jumlah yang valid untuk setiap item terpilih.';
  const usable=result&&Number.isFinite(result.total)&&Number.isFinite(result.offer)&&picked().length>0;
  $('count').textContent=picked().length+' dipilih';
  $('price').textContent=usable?rp(result.final):'—';
@@ -161,10 +214,12 @@ function renderPicker(){
 }
 function start(example=false){
  snapshot=example?copy(defaults):null;editId=null;
+ operatingSelection=new Map(example?operationOptions().filter(({item})=>item.qty>0).map(({key,item})=>[key,String(item.qty)]):[]);
  const values={name:example?'Contoh MCU Perusahaan':'',type:'corporate',people:1,opsMode:'allocate',fixed:defaults.example?.fixed??0,margin:12,tax:11,fee:5,step:10000,manual:'',...defaults.settings,...(example?defaults.example:{})};
  fields.forEach(id=>{$(id).value=values[id];});
  selected=new Set(example?defaults.units.map(item=>item.id):[]);
  $('search').value='';
+ renderOperations();
  $('builderStatus').textContent=example?'Contoh memakai referensi dan pengaturan tarif dari lampiran.':'';
  renderPicker();
 }
@@ -177,12 +232,14 @@ $('new').onclick=()=>start();
 $('useCurrent').onclick=()=>{
  snapshot=null;
  selected=new Set(data.refs.units.filter(item=>selected.has(item.id)).map(item=>item.id));
+ operatingSelection=new Map(operationOptions().filter(({key})=>operatingSelection.has(key)).map(({key})=>[key,operatingSelection.get(key)]));
+ renderOperations();
  $('builderStatus').textContent='Paket memakai referensi biaya terbaru.';
  renderPicker();
 };
 fields.forEach(id=>{$(id).oninput=()=>{
  if(id==='type'){
-  if($('type').value==='individual'){$('people').value=1;$('opsMode').value='fixed';}
+  if($('type').value==='individual'){$('people').value=1;$('opsMode').value='allocate';}
   else $('opsMode').value='allocate';
  }
  update();
@@ -192,7 +249,8 @@ $('save').onclick=()=>{
  if(!values.name.trim()){$('builderStatus').textContent='Isi nama paket sebelum menyimpan.';$('name').focus();return;}
  const id=editId||uid();
  const refs=copy(activeRefs());
- const pkg={id,values,refs,selected:[...selected],result:calculate(values,picked(),refs)};
+ const operations=chosenOperations();
+ const pkg={id,values,refs,operations:[...operatingSelection],selected:[...selected],result:calculate(values,picked(),operations)};
  const packages=[pkg,...data.packages.filter(item=>item.id!==id)];
  if(persist({...data,packages},'builderStatus','Paket tersimpan.'))editId=id;
 };
@@ -205,6 +263,8 @@ $('savedList').onclick=event=>{
  if(open){
   const pkg=data.packages.find(item=>item.id===open);
   snapshot=copy(pkg.refs);editId=pkg.id;selected=new Set(pkg.selected);
+  operatingSelection=new Map(pkg.operations??operationOptions().filter(({item})=>item.qty>0).map(({key,item})=>[key,String(item.qty)]));
+  renderOperations();
   fields.forEach(id=>{$(id).value=pkg.values[id];});
   $('search').value='';$('builderStatus').textContent='Paket ini memakai salinan referensi saat disimpan.';
   openTab('builder');renderPicker();
@@ -286,6 +346,7 @@ $('refForm').onsubmit=async event=>{
  }
  if(await saveSharedReference({...defaults,...refs},'refStatus','Referensi biaya tersimpan.')){
   if(!snapshot) selected=new Set(refs.units.filter(item=>selected.has(item.id)).map(item=>item.id));
+  renderOperations();
   renderPicker();
  }
 };
@@ -336,7 +397,7 @@ function lock(message) {
  defaults = undefined;
  snapshot = undefined;
  selected.clear();
- for(const id of ['units','ops','picker','savedList','breakdown']) document.getElementById(id).replaceChildren();
+ for(const id of ['units','ops','picker','packageOps','savedList','breakdown']) document.getElementById(id).replaceChildren();
  document.getElementById('protectedApp').hidden = true;
  document.getElementById('loginScreen').hidden = false;
  loginStatus.textContent = message;
@@ -504,4 +565,5 @@ $('documentForm').onsubmit=async event=>{
 </script>
 </body>
 </html>
+
 
