@@ -24,7 +24,7 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
  </form>
 </section>
 <div id="protectedApp" hidden>
-<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button id="logout">Keluar</button></nav></div></header>
+<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button data-tab="configuration" hidden>Konfigurasi</button><button data-tab="documents" hidden>Dokumen Harga</button><button id="logout">Keluar</button></nav></div></header>
 <main class="wrap">
 <section id="builder">
 <h1>Susun paket MCU</h1><p class="intro">Pilih pemeriksaan dan simulasikan tarif per peserta serta total penawaran.</p>
@@ -56,12 +56,27 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 <section class="panel"><h2>Biaya operasional kegiatan</h2><div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Harga satuan (Rp)</th><th>Subtotal</th><th>Aksi</th></tr></thead><tbody id="ops"></tbody></table></div><div class="actions"><button type="button" class="btn" id="addOp">+ Tambah biaya operasional</button><strong id="refTotal"></strong></div><p class="note">Harga yang kosong di lampiran diisi Rp 0. Ubah nilainya jika ada biaya yang perlu dialokasikan.</p></section>
 <div class="actions"><button class="btn primary" type="submit">Simpan referensi</button><button class="btn" type="button" id="discard">Batalkan perubahan</button></div><p class="status" id="refStatus" role="status"></p>
 </form></section>
-<section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Paket dan referensi disimpan di browser ini. Paket tersimpan menyimpan salinan biaya saat dibuat.</p><div class="stack" id="savedList"></div></section>
+<section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Paket disimpan di browser ini. Referensi biaya dibagikan melalui database. Paket tersimpan menyimpan salinan biaya saat dibuat.</p><div class="stack" id="savedList"></div></section>
+<section id="configuration" hidden><h1>Konfigurasi</h1>
+<form id="configForm" class="panel stack"><h2>Pengaturan tarif bawaan</h2><div class="fields">
+<label>Margin (%)<input name="margin" type="number" min="0" step="0.01" required></label>
+<label>PPN simulasi (%)<input name="tax" type="number" min="0" step="0.01" required></label>
+<label>Referral fee (%)<input name="fee" type="number" min="0" step="0.01" required></label>
+<label>Pembulatan (Rp)<input name="step" type="number" min="0" step="1" required></label>
+</div><div><button class="btn primary">Simpan konfigurasi</button></div><p id="configStatus" role="status"></p></form>
+<form id="accountForm" class="panel stack" hidden style="margin-top:16px"><h2>Tambah akun</h2>
+<div class="fields"><label>Email<input name="email" type="email" maxlength="254" required></label>
+<label>Peran<select name="role"><option value="staff">Staff</option><option value="supervisor">Supervisor</option></select></label>
+<label>Kata sandi awal (12–72 karakter)<input name="password" type="password" minlength="12" maxlength="72" autocomplete="new-password" required></label></div>
+<div><button class="btn primary">Buat akun</button></div><p id="accountStatus" role="status"></p></form></section>
+<section id="documents" hidden><h1>Dokumen Referensi Harga</h1><form id="documentForm" class="panel stack">
+<label>Pilih dokumen (maks. 10 MB)<input name="document" type="file" accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.png,.jpg,.jpeg" required></label>
+<div><button class="btn primary">Unggah dokumen</button></div><p id="documentStatus" role="status"></p><div id="documentList" class="stack"></div></form></section>
 </main>
 </div>
 <script src="excel.js" defer></script>
 <script src="auth-config.js" defer></script>
-<script src="auth.js" defer></script>
+
 <script>
 'use strict';
 const categories=['Pemeriksaan klinis','Laboratorium','Pemeriksaan penunjang','Fasilitas','Lainnya'];
@@ -93,8 +108,9 @@ function openTab(tab){
   const active=button.dataset.tab===tab;button.classList.toggle('active',active);
   if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
  });
- ['builder','reference','saved'].forEach(id=>{$(id).hidden=id!==tab;});
+ ['builder','reference','saved','configuration','documents'].forEach(id=>{$(id).hidden=id!==tab;});
  if(tab==='saved')renderSaved();
+ if(tab==='documents')listPriceDocuments();
 }
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>openTab(button.dataset.tab));
 function readFields(){return Object.fromEntries(fields.map(id=>[id,$(id).value]));}
@@ -145,7 +161,7 @@ function renderPicker(){
 }
 function start(example=false){
  snapshot=example?copy(defaults):null;editId=null;
- const values={name:example?'Contoh MCU Perusahaan':'',type:'corporate',people:1,opsMode:'allocate',fixed:defaults.example?.fixed??0,margin:12,tax:11,fee:5,step:10000,manual:'',...(example?defaults.example:{})};
+ const values={name:example?'Contoh MCU Perusahaan':'',type:'corporate',people:1,opsMode:'allocate',fixed:defaults.example?.fixed??0,margin:12,tax:11,fee:5,step:10000,manual:'',...defaults.settings,...(example?defaults.example:{})};
  fields.forEach(id=>{$(id).value=values[id];});
  selected=new Set(example?defaults.units.map(item=>item.id):[]);
  $('search').value='';
@@ -259,7 +275,7 @@ $('refForm').onclick=event=>{
 $('addUnit').onclick=()=>{$('units').append(refRow({id:uid(),name:'',cost:0,category:4},false));$('units').lastElementChild.querySelector('input').focus();$('refStatus').textContent='Ada perubahan yang belum disimpan.';};
 $('addOp').onclick=()=>{$('ops').append(refRow({name:'',cost:0,qty:1},true));updateRefTotal();$('ops').lastElementChild.querySelector('input').focus();$('refStatus').textContent='Ada perubahan yang belum disimpan.';};
 $('discard').onclick=()=>{renderReference();$('refStatus').textContent='Perubahan dibatalkan.';};
-$('refForm').onsubmit=event=>{
+$('refForm').onsubmit=async event=>{
  event.preventDefault();
  const refs={units:readRows('units'),ops:readRows('ops')};
  if([...refs.units,...refs.ops].some(item=>!item.name)){
@@ -268,7 +284,7 @@ $('refForm').onsubmit=event=>{
  if(refs.units.some(item=>item.source==='vendor'&&!item.vendor)){
   $('refStatus').textContent='Isi nama vendor untuk setiap komponen yang bersumber dari vendor.';return;
  }
- if(persist({...data,refs},'refStatus','Referensi biaya tersimpan.')){
+ if(await saveSharedReference({...defaults,...refs},'refStatus','Referensi biaya tersimpan.')){
   if(!snapshot) selected=new Set(refs.units.filter(item=>selected.has(item.id)).map(item=>item.id));
   renderPicker();
  }
@@ -277,12 +293,215 @@ function initializeCalculator(reference, userId){
  defaults=reference;
  $('example').hidden=!reference.example;
  key='kalkulator-mcu-v1:'+userId;
- data=load();
+ data={...load(),refs:{units:reference.units,ops:reference.ops}};
  $('refStatus').textContent='';
  renderReference();
  start();
+ applyRole();
  openTab('builder');
 }
 </script>
+<script>
+'use strict';
+
+let config;
+const loginForm = document.getElementById('loginForm');
+const loginStatus = document.getElementById('loginStatus');
+let session;
+let appRole;
+let expiryTimer;
+
+function configured() {
+ try {
+  const url = new URL(config.projectUrl);
+  return url.protocol === 'https:' && url.origin === config.projectUrl &&
+   /^sb_publishable_[A-Za-z0-9_-]+$/.test(config.publishableKey);
+ } catch { return false; }
+}
+
+async function request(path, {token, body, method = 'GET', prefer} = {}) {
+ const headers = {apikey:config.publishableKey};
+ if(token) headers.Authorization = 'Bearer '+token;
+ if(prefer)headers.Prefer=prefer;
+ if(body && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
+ return fetch(config.projectUrl+path, {method,headers,body:body instanceof FormData ? body : body && JSON.stringify(body),cache:'no-store'});
+}
+
+function lock(message) {
+ clearTimeout(expiryTimer);
+ session = undefined;
+ appRole = undefined;
+ $('accountForm').reset(); $('documentForm').reset(); $('documentList').replaceChildren();
+ data = undefined;
+ defaults = undefined;
+ snapshot = undefined;
+ selected.clear();
+ for(const id of ['units','ops','picker','savedList','breakdown']) document.getElementById(id).replaceChildren();
+ document.getElementById('protectedApp').hidden = true;
+ document.getElementById('loginScreen').hidden = false;
+ loginStatus.textContent = message;
+}
+
+loginForm.onsubmit = async event => {
+ event.preventDefault();
+ const button = loginForm.querySelector('button');
+ button.disabled = true;
+ loginStatus.textContent = 'Memeriksa akun…';
+ let credentials;
+ try {
+  const response = await request('/auth/v1/token?grant_type=password',{
+   method:'POST',body:{email:loginForm.elements.email.value.trim(),password:loginForm.elements.password.value}
+  });
+  if(!response.ok) throw new Error(response.status === 429 ? 'Terlalu banyak percobaan. Coba lagi nanti.' : 'Login gagal. Periksa email dan kata sandi.');
+  credentials = await response.json();
+  const references = await request('/rest/v1/mcu_reference?id=eq.1&select=payload',{token:credentials.access_token});
+  if(!references.ok) throw new Error('Referensi biaya belum bisa diakses.');
+  const [row] = await references.json();
+  if(!row) throw new Error('Akun belum memiliki akses kalkulator. Hubungi admin.');
+  if(!Array.isArray(row.payload?.units) || !Array.isArray(row.payload?.ops)) throw new Error('Referensi biaya belum dikonfigurasi.');
+  const membership = await request('/rest/v1/mcu_members?select=role',{token:credentials.access_token});
+  if(!membership.ok)throw new Error('Izin akun tidak bisa diperiksa.');
+  appRole=(await membership.json())[0]?.role;
+  if(!['staff','supervisor','super_admin'].includes(appRole))throw new Error('Akun belum memiliki akses kalkulator.');
+  session = credentials.access_token;
+  initializeCalculator(row.payload,credentials.user.id);
+  expiryTimer = setTimeout(() => lock('Sesi berakhir. Silakan masuk kembali.'),Number(credentials.expires_in)*1000);
+  loginForm.reset();
+  document.getElementById('loginScreen').hidden = true;
+  document.getElementById('protectedApp').hidden = false;
+ } catch(error) {
+  loginStatus.textContent = error instanceof TypeError ? 'Layanan login tidak dapat dihubungi. Coba lagi.' : error.message;
+ } finally {
+  loginForm.elements.password.value = '';
+  button.disabled = false;
+ }
+};
+
+document.getElementById('logout').onclick = () => {
+ const token = session;
+ lock('Anda sudah keluar.');
+ if(token) request('/auth/v1/logout?scope=local',{method:'POST',token}).catch(()=>{});
+};
+
+window.addEventListener('DOMContentLoaded',()=>{
+ config=window.MCU_AUTH;
+ if(!configured()) {
+ loginForm.querySelector('button').disabled = true;
+ loginStatus.textContent = 'Layanan login belum dikonfigurasi. Hubungi admin.';
+}
+});
+
+const canManage=()=>['super_admin','supervisor'].includes(appRole);
+function applyRole(){
+ for(const tab of ['configuration','documents'])document.querySelector('[data-tab="'+tab+'"]').hidden=!canManage();
+ $('accountForm').hidden=appRole!=='super_admin';
+ for(const element of $('refForm').querySelectorAll('input,select,button')){
+  if(!canManage())element.disabled=true;
+  else if(element.dataset.field!=='vendor')element.disabled=false;
+ }
+ const configForm=$('configForm');
+ for(const [name,value] of Object.entries({margin:12,tax:11,fee:5,step:10000,...defaults.settings}))configForm.elements[name].value=value;
+ for(const id of ['configStatus','accountStatus','documentStatus'])$(id).textContent='';
+}
+async function saveSharedReference(payload,status,message){
+ if(!canManage())return false;
+ const token=session;
+ try{
+  const response=await request('/rest/v1/mcu_reference?id=eq.1&select=id',{token,method:'PATCH',body:{payload},prefer:'return=representation'});
+  if(session!==token)return false;
+  if(!response.ok||!(await response.json()).length)throw Error();
+  if(session!==token)return false;
+  defaults=payload;
+  data.refs={units:payload.units,ops:payload.ops};
+  $(status).textContent=message;
+  return true;
+ }catch{
+  if(session===token)$(status).textContent='Perubahan gagal disimpan. Periksa akses dan coba lagi.';
+  return false;
+ }
+}
+$('configForm').onsubmit=async event=>{
+ event.preventDefault();
+ const form=event.currentTarget;
+ const button=form.querySelector('button');
+ button.disabled=true;
+ const settings=Object.fromEntries([...new FormData(form)].map(([key,value])=>[key,Number(value)]));
+ try{await saveSharedReference({...defaults,settings},'configStatus','Konfigurasi tersimpan. Berlaku untuk paket baru.');}
+ finally{button.disabled=false;}
+};
+$('accountForm').onsubmit=async event=>{
+ event.preventDefault();
+ if(appRole!=='super_admin')return;
+ const form=event.currentTarget;
+ const token=session;
+ const button=form.querySelector('button');
+ button.disabled=true;
+ try{
+  const response=await request('/functions/v1/mcu-create-user',{token,method:'POST',body:Object.fromEntries(new FormData(form))});
+  const result=await response.json();
+  if(session!==token)return;
+  $('accountStatus').textContent=result.message||'Akun gagal dibuat.';
+  if(response.ok)form.reset();
+ }catch{if(session===token)$('accountStatus').textContent='Layanan akun tidak dapat dihubungi.';}
+ finally{form.elements.password.value='';button.disabled=false;}
+};
+const bucket='mcu-price-docs';
+async function listPriceDocuments(){
+ if(!canManage())return;
+ const token=session;
+ try{
+  const response=await request('/storage/v1/object/list/'+bucket,{token,method:'POST',body:{prefix:'',limit:100,sortBy:{column:'created_at',order:'desc'}}});
+  if(!response.ok)throw Error();
+  const files=await response.json();
+  if(session!==token)return;
+  $('documentList').replaceChildren();
+  if(!files.length)$('documentList').textContent='Belum ada dokumen.';
+  for(const file of files){
+   const button=document.createElement('button');
+   button.type='button';
+   button.className='btn';
+   button.textContent=file.name.replace(/^[a-f0-9-]{36}_/,'');
+   button.onclick=async ()=>{
+    try{
+     const response=await request('/storage/v1/object/authenticated/'+bucket+'/'+encodeURIComponent(file.name),{token});
+     if(!response.ok)throw Error();
+     const blob=await response.blob();
+     if(session!==token)return;
+     const url=URL.createObjectURL(blob);
+     const link=document.createElement('a');
+     link.href=url;link.download=button.textContent;link.click();
+     setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch{if(session===token)$('documentStatus').textContent='Dokumen tidak dapat diunduh.';}
+   };
+   $('documentList').append(button);
+  }
+ }catch{if(session===token)$('documentStatus').textContent='Daftar dokumen tidak dapat dimuat.';}
+}
+$('documentForm').onsubmit=async event=>{
+ event.preventDefault();
+ if(!canManage())return;
+ const form=event.currentTarget;
+ const file=form.elements.document.files[0];
+ if(!file||file.size>10485760||!/\.(pdf|xlsx?|csv|docx?|png|jpe?g)$/i.test(file.name)){
+  $('documentStatus').textContent='Pilih dokumen yang didukung dengan ukuran maksimal 10 MB.';return;
+ }
+ const token=session;
+ const button=form.querySelector('button');
+ button.disabled=true;
+ const name=crypto.randomUUID()+'_'+file.name.replace(/[^a-zA-Z0-9._ -]/g,'_').slice(-140);
+ try{
+  const body=new FormData();body.append('file',file);
+  const response=await request('/storage/v1/object/'+bucket+'/'+encodeURIComponent(name),{token,method:'POST',body});
+  if(!response.ok)throw Error();
+  if(session!==token)return;
+  form.reset();
+  $('documentStatus').textContent='Dokumen berhasil diunggah.';
+  await listPriceDocuments();
+ }catch{if(session===token)$('documentStatus').textContent='Dokumen gagal diunggah.';}
+ finally{button.disabled=false;}
+};
+
+</script>
 </body>
 </html>
+
