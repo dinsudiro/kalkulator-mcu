@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kalkulator Paket MCU</title>
+<link id="brandFavicon" rel="icon">
 <style>
 :root{font:15px/1.5 "DM Sans",system-ui,sans-serif;color:#102d30;background:#f3f6f5;--muted:#526b6a;--line:#dce6e2;--green:#086253;--light:#e6f3ee}
 *{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
@@ -24,7 +25,7 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
  </form>
 </section>
 <div id="protectedApp" hidden>
-<header><div class="wrap top"><div class="brand"><span class="logo" aria-hidden="true">+</span> Kalkulator MCU</div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button data-tab="configuration" hidden>Konfigurasi</button><button data-tab="documents" hidden>Dokumen Harga</button><button data-tab="dashboard" hidden>Dashboard</button><button id="logout">Keluar</button></nav></div></header>
+<header><div class="wrap top"><div class="brand"><span id="brandMark" class="logo" aria-hidden="true">+</span><img id="brandLogo" width="32" height="32" style="object-fit:contain" alt="" hidden><span id="brandName">Kalkulator MCU</span></div><nav class="nav" aria-label="Navigasi"><button data-tab="builder" class="active">Buat Paket</button><button data-tab="reference">Referensi Biaya</button><button data-tab="saved">Paket Tersimpan</button><button data-tab="configuration" hidden>Konfigurasi</button><button data-tab="documents" hidden>Dokumen Harga</button><button data-tab="dashboard" hidden>Dashboard</button><button id="logout">Keluar</button></nav></div></header>
 <main class="wrap">
 <section id="builder">
 <h1>Susun paket MCU</h1><p class="intro">Pilih pemeriksaan dan simulasikan tarif per peserta serta total penawaran.</p>
@@ -58,7 +59,10 @@ main.wrap{padding-block:35px 55px}h1{font-size:clamp(32px,6vw,49px);line-height:
 </form></section>
 <section id="saved" hidden><h1>Paket tersimpan</h1><p class="intro">Daftar paket sesuai akses akun Anda.</p><button type="button" class="btn" id="importLocalPackages" hidden>Impor paket dari browser ini</button><p id="savedStatus" role="status"></p><div class="stack" id="savedList"></div></section>
 <section id="configuration" hidden><h1>Konfigurasi</h1>
-<form id="configForm" class="panel stack"><h2>Pengaturan tarif bawaan</h2><div class="fields">
+<form id="configForm" class="panel stack"><h2>Identitas instansi</h2><div class="fields">
+<label>Nama instansi<input name="institution" maxlength="120" placeholder="Contoh: RS Ummi"></label>
+<label>Logo instansi<input name="institutionLogo" type="file" accept="image/png,image/jpeg,image/webp"><small>PNG, JPG, atau WebP. Logo juga digunakan sebagai ikon tab.</small></label>
+</div><div class="actions"><img id="brandPreview" width="56" height="56" style="object-fit:contain" alt="Logo instansi saat ini" hidden><label class="check"><input name="removeLogo" type="checkbox">Hapus logo saat disimpan</label></div><h2>Pengaturan tarif bawaan</h2><div class="fields">
 <label>Margin (%)<input name="margin" type="number" min="0" step="0.01" required></label>
 <label>PPN simulasi (%)<input name="tax" type="number" min="0" step="0.01" required></label>
 <label>Referral fee (%)<input name="fee" type="number" min="0" step="0.01" required></label>
@@ -514,6 +518,8 @@ $('refForm').onsubmit=async event=>{
 function initializeCalculator(reference, userId){
  currentUser=userId;
  defaults=reference;
+ renderBrand(reference.brand);
+ try{localStorage.setItem(brandKey,JSON.stringify(reference.brand??{}));}catch{}
  $('example').hidden=!reference.example;
  key='kalkulator-mcu-v1:'+userId;
  data={packages:[],refs:{units:reference.units,ops:reference.ops}};
@@ -630,6 +636,9 @@ function applyRole(){
   else if(element.dataset.field!=='vendor')element.disabled=false;
  }
  const configForm=$('configForm');
+ configForm.reset();
+ configForm.elements.institution.value=defaults.brand?.name??'';
+ showBrandPreview(defaults.brand);
  for(const [name,value] of Object.entries({margin:12,tax:11,fee:5,step:10000,...defaults.settings}))configForm.elements[name].value=value;
  for(const id of ['configStatus','accountStatus','documentStatus'])$(id).textContent='';
 }
@@ -655,8 +664,21 @@ $('configForm').onsubmit=async event=>{
  const form=event.currentTarget;
  const button=form.querySelector('button');
  button.disabled=true;
- const settings=Object.fromEntries([...new FormData(form)].map(([key,value])=>[key,Number(value)]));
- try{await saveSharedReference({...defaults,settings},'configStatus','Konfigurasi tersimpan. Berlaku untuk paket baru.');}
+ const settings=Object.fromEntries(['margin','tax','fee','step'].map(name=>[name,Number(form.elements[name].value)]));
+ const token=session;
+ try{
+  const file=form.elements.institutionLogo.files[0];
+  const logo=file?await resizeBrandLogo(file):form.elements.removeLogo.checked?'':defaults.brand?.logo??'';
+  if(token!==session)return;
+  const brand={name:form.elements.institution.value.trim(),logo};
+  if(await saveSharedReference({...defaults,settings,brand},'configStatus','Konfigurasi tersimpan.')){
+   renderBrand(brand);
+   showBrandPreview(brand);
+   form.elements.institutionLogo.value='';
+   form.elements.removeLogo.checked=false;
+   try{localStorage.setItem(brandKey,JSON.stringify(brand));}catch{}
+  }
+ }catch(error){if(token===session)$('configStatus').textContent=error.message||'Logo tidak dapat diproses.';}
  finally{button.disabled=false;}
 };
 $('accountForm').onsubmit=async event=>{
@@ -1023,6 +1045,40 @@ async function renderDashboard(){
 }
 
 </script>
+<script>
+const brandKey='mcu-institution-brand';
+function brandImage(brand){
+ return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(brand?.logo??'')?brand.logo:'';
+}
+function renderBrand(brand){
+ const name=typeof brand?.name==='string'?brand.name.trim().slice(0,120):'';
+ const logo=brandImage(brand);
+ $('brandName').textContent=name||'Kalkulator MCU';
+ document.title=name?name+' | Kalkulator MCU':'Kalkulator Paket MCU';
+ $('brandMark').hidden=Boolean(logo);
+ $('brandLogo').hidden=!logo;
+ if(logo){$('brandLogo').src=logo;$('brandFavicon').href=logo;}
+ else{$('brandLogo').removeAttribute('src');$('brandFavicon').removeAttribute('href');}
+}
+function showBrandPreview(brand){
+ const image=$('brandPreview'), logo=brandImage(brand);
+ image.hidden=!logo;
+ if(logo)image.src=logo;else image.removeAttribute('src');
+}
+async function resizeBrandLogo(file){
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw Error('Pilih PNG, JPG, atau WebP dengan ukuran maksimal 5 MB.');
+ const bitmap=await createImageBitmap(file);
+ try{
+  const canvas=document.createElement('canvas');
+  const scale=Math.min(1,128/Math.max(bitmap.width,bitmap.height));
+  canvas.width=128;canvas.height=128;
+  const width=bitmap.width*scale,height=bitmap.height*scale;
+  canvas.getContext('2d').drawImage(bitmap,(128-width)/2,(128-height)/2,width,height);
+  return canvas.toDataURL('image/png');
+ }finally{bitmap.close();}
+}
+try{renderBrand(JSON.parse(localStorage.getItem(brandKey)));}catch{}
+</script>
 </body>
 </html>
 
@@ -1032,3 +1088,4 @@ async function renderDashboard(){
 
 
 <!-- Shared package dashboard -->
+
